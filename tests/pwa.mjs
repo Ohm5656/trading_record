@@ -20,13 +20,19 @@ try {
   page.on('pageerror', (error) => pageErrors.push(error.message))
 
   await page.goto('http://127.0.0.1:4179', { waitUntil: 'networkidle' })
+  await page.getByRole('button', { name: 'สมัครสมาชิก', exact: true }).click()
+  await page.getByLabel('ชื่อที่ใช้แสดง').fill('Offline Trader')
+  await page.getByLabel('อีเมล').fill('offline@example.com')
+  await page.locator('.auth-input input[type="password"]').fill('offline-pass-123')
+  await page.getByRole('button', { name: 'สร้างบัญชี', exact: true }).click()
+  await page.locator('.calendar-grid').waitFor()
   await page.evaluate(() => navigator.serviceWorker.ready)
   await page.reload({ waitUntil: 'networkidle' })
   await page.waitForFunction(() => Boolean(navigator.serviceWorker.controller))
   await page.reload({ waitUntil: 'networkidle' })
 
   const cachedUrls = await page.evaluate(async () => {
-    const cache = await caches.open('edge-journal-v4')
+    const cache = await caches.open('trade-rise-v5')
     return (await cache.keys()).map((request) => request.url)
   })
   if (!cachedUrls.some((url) => url.endsWith('/'))) throw new Error('App shell was not cached')

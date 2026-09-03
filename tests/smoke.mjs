@@ -29,6 +29,13 @@ try {
   page.on('pageerror', (error) => browserErrors.push(error.message))
 
   await page.goto('http://127.0.0.1:4178', { waitUntil: 'networkidle' })
+  await page.getByRole('button', { name: 'สมัครสมาชิก', exact: true }).click()
+  await page.getByLabel('ชื่อที่ใช้แสดง').fill('Test Trader')
+  await page.getByLabel('อีเมล').fill('trader@example.com')
+  await page.locator('.auth-input input[type="password"]').fill('secure-pass-123')
+  await page.getByRole('button', { name: 'สร้างบัญชี', exact: true }).click()
+  await page.locator('.calendar-grid').waitFor()
+
   await page.locator('.mobile-fab').click()
   await page.locator('.amount-field input').fill('125.50')
   await page.getByLabel('สินทรัพย์ / Symbol').fill('EURUSD')
@@ -41,6 +48,12 @@ try {
   })
   await page.getByRole('button', { name: 'บันทึกการเทรด', exact: true }).click()
   await page.locator('.toast').waitFor()
+  if (process.env.SCREENSHOT_PATH) await page.screenshot({ path: process.env.SCREENSHOT_PATH, fullPage: true })
+  if (process.env.SCREENSHOT_DESKTOP_PATH) {
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await page.screenshot({ path: process.env.SCREENSHOT_DESKTOP_PATH, fullPage: true })
+    await page.setViewportSize({ width: 390, height: 844 })
+  }
 
   const winCell = page.locator('.day-cell.win').filter({ hasText: '125.50' })
   assert(await winCell.count() === 1, 'Monthly calendar did not show the saved profit')
@@ -63,9 +76,29 @@ try {
   await page.reload({ waitUntil: 'networkidle' })
   const lossCell = page.locator('.day-cell.lose').filter({ hasText: '50.00' })
   assert(await lossCell.count() === 1, 'Trade did not persist in IndexedDB after reload')
+
+  await page.locator('.bottom-nav .nav-item').filter({ hasText: 'ตั้งค่า' }).click()
+  await page.getByRole('button', { name: 'ออกจากระบบ' }).click()
+  await page.locator('.auth-form').waitFor()
+
+  await page.getByRole('button', { name: 'สมัครสมาชิก', exact: true }).click()
+  await page.getByLabel('ชื่อที่ใช้แสดง').fill('Second Trader')
+  await page.getByLabel('อีเมล').fill('second@example.com')
+  await page.locator('.auth-input input[type="password"]').fill('second-pass-123')
+  await page.getByRole('button', { name: 'สร้างบัญชี', exact: true }).click()
+  await page.locator('.calendar-grid').waitFor()
+  assert(await page.locator('.day-cell.lose').count() === 0, 'A second user could see the first user’s trade')
+  await page.locator('.bottom-nav .nav-item').filter({ hasText: 'ตั้งค่า' }).click()
+  await page.getByRole('button', { name: 'ออกจากระบบ' }).click()
+
+  await page.getByLabel('อีเมล').fill('trader@example.com')
+  await page.locator('.auth-input input[type="password"]').fill('secure-pass-123')
+  await page.getByRole('button', { name: 'เข้าสู่ระบบ', exact: true }).last().click()
+  await page.locator('.calendar-grid').waitFor()
+  assert(await page.locator('.day-cell.lose').filter({ hasText: '50.00' }).count() === 1, 'Trade was not isolated to and restored for the logged-in user')
   assert(browserErrors.length === 0, `Browser errors: ${browserErrors.join(', ')}`)
 
-  console.log('Smoke test passed: create, image upload, edit, analytics, and IndexedDB persistence')
+  console.log('Smoke test passed: auth, remembered session, trade workflow, image, analytics, and user data persistence')
   await context.close()
 } finally {
   await browser.close()
