@@ -91,6 +91,18 @@ function formatMoney(value, currency, signed = false) {
   return formatted
 }
 
+function formatCompactMoney(value, currency) {
+  const formatted = new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency,
+    notation: 'compact',
+    maximumFractionDigits: Math.abs(value) < 1000 ? 0 : 1,
+  }).format(Math.abs(Number(value) || 0))
+  if (value < 0) return `−${formatted}`
+  if (value > 0) return `+${formatted}`
+  return formatted
+}
+
 function formatPeriod(date, mode) {
   if (mode === 'day') {
     return new Intl.DateTimeFormat(locale, { weekday: 'short', day: 'numeric', month: 'long', year: 'numeric' }).format(date)
@@ -198,6 +210,10 @@ function App() {
     }
   }, [])
 
+  useEffect(() => {
+    window.scrollTo(0, 0)
+  }, [page])
+
   async function persistTrade(trade) {
     await saveTrade(trade, currentUser.id)
     setTrades((current) => {
@@ -276,6 +292,15 @@ function App() {
             </button>
           </div>
         </header>
+
+        <SessionTape
+          trades={trades}
+          settings={settings}
+          onOpenToday={() => {
+            setPage('calendar')
+            openDay(new Date())
+          }}
+        />
 
         <main className="main-content">
           {page === 'calendar' && (
@@ -473,13 +498,29 @@ function NavItems({ page, setPage }) {
   })
 }
 
+function SessionTape({ trades, settings, onOpenToday }) {
+  const today = new Date()
+  const todayTrades = trades.filter((trade) => trade.date === dateKey(today))
+  const pnl = totalPnl(todayTrades)
+  return (
+    <button className="session-tape" onClick={onOpenToday}>
+      <span className="tape-status"><i /> SESSION</span>
+      <span className="tape-date">{new Intl.DateTimeFormat(locale, { weekday: 'short', day: '2-digit', month: 'short' }).format(today)}</span>
+      <span><small>บัญชี</small><strong>{settings.accountName}</strong></span>
+      <span><small>รายการวันนี้</small><strong>{todayTrades.length}</strong></span>
+      <span className="tape-pnl"><small>Net P&L</small><strong className={pnl < 0 ? 'loss-text' : pnl > 0 ? 'profit-text' : ''}>{formatMoney(pnl, settings.currency, true)}</strong></span>
+      <ChevronRight size={15} />
+    </button>
+  )
+}
+
 function CalendarPage(props) {
   const { view, setView, cursor, setCursor } = props
   return (
     <section className="page-section calendar-page">
       <div className="page-heading">
         <div>
-          <p className="page-context">Journal / Calendar</p>
+          <p className="page-context">บันทึก / ปฏิทิน</p>
           <h1>ปฏิทิน</h1>
           <p className="page-lede">ดูผลลัพธ์และย้อนทบทวนทุกการเทรดตามช่วงเวลา</p>
         </div>
@@ -523,24 +564,27 @@ function PeriodNavigator({ label, previous, next, today }) {
   )
 }
 
-function SummaryCard({ label, value, tone = '', icon: Icon, children }) {
+function PerformanceLedger({ label, trades, target, currency, goSettings }) {
+  const pnl = totalPnl(trades)
+  const wins = trades.filter((trade) => pnlOf(trade) > 0).length
+  const winRate = trades.length ? Math.round((wins / trades.length) * 100) : 0
+  const tradeDays = new Set(trades.map((trade) => trade.date)).size
+  const progress = target > 0 ? Math.max(0, Math.min(100, (pnl / target) * 100)) : 0
   return (
-    <article className={`summary-card ${tone}`}>
-      <div className="summary-label">{Icon && <span className="summary-icon"><Icon size={18} /></span>}{label}</div>
-      {value != null && <div className="summary-value">{value}</div>}
-      {children}
-    </article>
-  )
-}
-
-function GoalCard({ current, target, currency, label, goSettings }) {
-  const progress = target > 0 ? Math.max(0, Math.min(100, (current / target) * 100)) : 0
-  return (
-    <SummaryCard label={label} icon={Target}>
-      <div className="goal-row"><strong>{formatMoney(current, currency)}</strong><span>{target > 0 ? formatMoney(target, currency) : 'ยังไม่ตั้ง'}</span></div>
-      <div className="progress-track"><span style={{ width: `${progress}%` }} /></div>
-      <button className="text-button" onClick={goSettings}>แก้ไขเป้าหมาย</button>
-    </SummaryCard>
+    <section className="performance-ledger">
+      <div className="ledger-net">
+        <span>{label}</span>
+        <strong className={pnl < 0 ? 'loss-text' : pnl > 0 ? 'profit-text' : ''}>{formatMoney(pnl, currency, true)}</strong>
+      </div>
+      <div className="ledger-stat"><span>รายการ</span><strong>{trades.length}</strong></div>
+      <div className="ledger-stat"><span>วันเทรด</span><strong>{tradeDays}</strong></div>
+      <div className="ledger-stat"><span>Win rate</span><strong>{winRate}%</strong></div>
+      <div className="ledger-goal">
+        <div><span>เป้าหมาย</span><button onClick={goSettings}>แก้ไข</button></div>
+        <div className="ledger-goal-values"><strong>{target > 0 ? `${Math.round(progress)}%` : '—'}</strong><small>{target > 0 ? formatMoney(target, currency) : 'ยังไม่ตั้งเป้าหมาย'}</small></div>
+        <div className="progress-track"><span style={{ width: `${progress}%` }} /></div>
+      </div>
+    </section>
   )
 }
 
@@ -549,18 +593,12 @@ function MonthView({ trades, settings, cursor, openDay, goSettings }) {
     const date = fromDateKey(trade.date)
     return date.getFullYear() === cursor.getFullYear() && date.getMonth() === cursor.getMonth()
   })
-  const pnl = totalPnl(filtered)
   const cells = monthCells(cursor, settings.showWeekends)
   const labels = settings.showWeekends ? weekdayLabels : weekdayLabels.slice(0, 5)
 
   return (
     <>
-      <div className="summary-grid two">
-        <SummaryCard label="กำไร / ขาดทุนสุทธิ" value={formatMoney(pnl, settings.currency, true)} tone={pnl < 0 ? 'negative' : 'positive'} icon={WalletCards}>
-          <p className="summary-caption">{filtered.length} รายการในเดือนนี้</p>
-        </SummaryCard>
-        <GoalCard current={pnl} target={settings.monthlyGoal} currency={settings.currency} label="เป้าหมายประจำเดือน" goSettings={goSettings} />
-      </div>
+      <PerformanceLedger label="Net P&L เดือนนี้" trades={filtered} target={settings.monthlyGoal} currency={settings.currency} goSettings={goSettings} />
 
       <div className="calendar-panel panel">
         <div className="panel-heading">
@@ -585,7 +623,7 @@ function MonthView({ trades, settings, cursor, openDay, goSettings }) {
                 <span className="day-number">{date.getDate()}</span>
                 {dayTrades.length ? (
                   <>
-                    <strong>{formatMoney(dayPnl, settings.currency, true)}</strong>
+                    <strong>{formatCompactMoney(dayPnl, settings.currency)}</strong>
                     <small>{dayTrades.length} {dayTrades.length === 1 ? 'trade' : 'trades'}</small>
                   </>
                 ) : <span className="empty-dash">—</span>}
@@ -605,11 +643,12 @@ function DayView({ date, trades, settings, openNewTrade, editTrade, deleteTrade,
   const losses = dayTrades.filter((trade) => pnlOf(trade) < 0)
   return (
     <>
-      <div className="summary-grid three day-summary">
-        <SummaryCard label={`P&L วันนี้ (${dayTrades.length})`} value={formatMoney(totalPnl(dayTrades), settings.currency, true)} tone={totalPnl(dayTrades) < 0 ? 'negative' : 'positive'} icon={CircleDollarSign} />
-        <SummaryCard label={`กำไร (${wins.length})`} value={formatMoney(totalPnl(wins), settings.currency)} tone="positive" icon={ArrowUpRight} />
-        <SummaryCard label={`ขาดทุน (${losses.length})`} value={formatMoney(Math.abs(totalPnl(losses)), settings.currency)} tone="negative" icon={ArrowDownRight} />
-      </div>
+      <section className="day-ledger">
+        <div className="ledger-net"><span>Net P&L</span><strong className={totalPnl(dayTrades) < 0 ? 'loss-text' : totalPnl(dayTrades) > 0 ? 'profit-text' : ''}>{formatMoney(totalPnl(dayTrades), settings.currency, true)}</strong></div>
+        <div className="ledger-stat"><span>รายการ</span><strong>{dayTrades.length}</strong></div>
+        <div className="ledger-stat profit"><span>กำไร</span><strong>{formatMoney(totalPnl(wins), settings.currency)}</strong><small>{wins.length} รายการ</small></div>
+        <div className="ledger-stat loss"><span>ขาดทุน</span><strong>{formatMoney(Math.abs(totalPnl(losses)), settings.currency)}</strong><small>{losses.length} รายการ</small></div>
+      </section>
 
       <div className="section-heading">
         <div><h2>รายการเทรด</h2><p>{dayTrades.length ? 'รายละเอียดทั้งหมดของวันนี้' : 'ยังไม่มีรายการสำหรับวันนี้'}</p></div>
@@ -662,15 +701,9 @@ function TradeCard({ trade, currency, onEdit, onDelete, onImage }) {
 
 function YearView({ trades, settings, cursor, openDay, goSettings }) {
   const yearTrades = trades.filter((trade) => fromDateKey(trade.date).getFullYear() === cursor.getFullYear())
-  const pnl = totalPnl(yearTrades)
   return (
     <>
-      <div className="summary-grid two">
-        <SummaryCard label="กำไร / ขาดทุนสุทธิ" value={formatMoney(pnl, settings.currency, true)} tone={pnl < 0 ? 'negative' : 'positive'} icon={WalletCards}>
-          <p className="summary-caption">{yearTrades.length} รายการในปีนี้</p>
-        </SummaryCard>
-        <GoalCard current={pnl} target={settings.yearlyGoal} currency={settings.currency} label="เป้าหมายประจำปี" goSettings={goSettings} />
-      </div>
+      <PerformanceLedger label="Net P&L ปีนี้" trades={yearTrades} target={settings.yearlyGoal} currency={settings.currency} goSettings={goSettings} />
       <div className="year-grid">
         {Array.from({ length: 12 }, (_, month) => (
           <MiniMonth
@@ -783,7 +816,7 @@ function AnalyticsPage({ trades, settings }) {
   return (
     <section className="page-section">
       <div className="page-heading">
-        <div><p className="page-context">Journal / Analytics</p><h1>สถิติ</h1><p className="page-lede">ตัวเลขจากรายการที่บันทึกจริงทั้งหมด</p></div>
+        <div><p className="page-context">บันทึก / สถิติ</p><h1>สถิติ</h1><p className="page-lede">ตัวเลขจากรายการที่บันทึกจริงทั้งหมด</p></div>
         <div className="account-chip"><span className="status-dot" />{settings.accountName}</div>
       </div>
 
@@ -820,7 +853,7 @@ function Metric({ label, value, detail, tone }) {
 }
 
 function EquityChart({ values }) {
-  if (!values.length) return <div className="chart-empty"><LineChart size={28} /><span>กราฟจะแสดงเมื่อมีข้อมูล</span></div>
+  if (values.length < 2) return <div className="chart-empty"><LineChart size={28} /><span>เพิ่มอย่างน้อย 2 รายการเพื่อดูเส้นผลลัพธ์สะสม</span></div>
   const width = 760
   const height = 210
   const min = Math.min(0, ...values)
@@ -906,7 +939,7 @@ function SettingsPage({ user, settings, trades, onSave, onImport, onClear, insta
   return (
     <section className="page-section settings-page">
       <div className="page-heading settings-heading">
-        <div><p className="page-context">Account / Preferences</p><h1>ตั้งค่า</h1><p className="page-lede">บัญชี เป้าหมาย และข้อมูลของคุณ</p></div>
+        <div><p className="page-context">บัญชี / ตั้งค่า</p><h1>ตั้งค่า</h1><p className="page-lede">บัญชี เป้าหมาย และข้อมูลของคุณ</p></div>
         <button className="logout-button" onClick={onLogout}><LogOut size={17} /> ออกจากระบบ</button>
       </div>
       <section className="profile-strip">
