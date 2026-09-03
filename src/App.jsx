@@ -479,8 +479,9 @@ function CalendarPage(props) {
     <section className="page-section calendar-page">
       <div className="page-heading">
         <div>
-          <p className="eyebrow">TRADING JOURNAL</p>
-          <h1>ปฏิทินผลการเทรด</h1>
+          <p className="page-context">Journal / Calendar</p>
+          <h1>ปฏิทิน</h1>
+          <p className="page-lede">ดูผลลัพธ์และย้อนทบทวนทุกการเทรดตามช่วงเวลา</p>
         </div>
         <div className="account-chip"><span className="status-dot" />{props.settings.accountName}<ChevronDown size={15} /></div>
       </div>
@@ -726,7 +727,7 @@ function AllTimeView({ trades, settings, openDay }) {
   return (
     <>
       <article className="all-time-hero panel">
-        <div><p className="eyebrow">ALL-TIME PERFORMANCE</p><h2>ผลลัพธ์ตลอดการเทรด</h2><p>{trades.length} รายการ · {yearMap.length} ปี</p></div>
+        <div><p className="page-context">All-time</p><h2>ผลลัพธ์ตลอดการเทรด</h2><p>{trades.length} รายการ · {yearMap.length} ปี</p></div>
         <strong className={pnl < 0 ? 'loss-text' : 'profit-text'}>{formatMoney(pnl, settings.currency, true)}</strong>
       </article>
       {yearMap.length ? (
@@ -782,7 +783,7 @@ function AnalyticsPage({ trades, settings }) {
   return (
     <section className="page-section">
       <div className="page-heading">
-        <div><p className="eyebrow">PERFORMANCE</p><h1>วิเคราะห์การเทรด</h1></div>
+        <div><p className="page-context">Journal / Analytics</p><h1>สถิติ</h1><p className="page-lede">ตัวเลขจากรายการที่บันทึกจริงทั้งหมด</p></div>
         <div className="account-chip"><span className="status-dot" />{settings.accountName}</div>
       </div>
 
@@ -873,7 +874,7 @@ function SettingsPage({ user, settings, trades, onSave, onImport, onClear, insta
     const url = URL.createObjectURL(blob)
     const link = document.createElement('a')
     link.href = url
-    link.download = `edge-journal-backup-${dateKey(new Date())}.json`
+    link.download = `trade-rise-backup-${dateKey(new Date())}.json`
     link.click()
     URL.revokeObjectURL(url)
     notify('ส่งออกไฟล์สำรองแล้ว')
@@ -905,7 +906,7 @@ function SettingsPage({ user, settings, trades, onSave, onImport, onClear, insta
   return (
     <section className="page-section settings-page">
       <div className="page-heading settings-heading">
-        <div><p className="eyebrow">ACCOUNT & PREFERENCES</p><h1>ตั้งค่า</h1></div>
+        <div><p className="page-context">Account / Preferences</p><h1>ตั้งค่า</h1><p className="page-lede">บัญชี เป้าหมาย และข้อมูลของคุณ</p></div>
         <button className="logout-button" onClick={onLogout}><LogOut size={17} /> ออกจากระบบ</button>
       </div>
       <section className="profile-strip">
@@ -934,7 +935,7 @@ function SettingsPage({ user, settings, trades, onSave, onImport, onClear, insta
 
           <section className="settings-card panel">
             <div className="settings-title"><span><Smartphone /></span><div><h2>ติดตั้งแอป</h2><p>เปิดใช้งานแบบเต็มหน้าจอและออฟไลน์</p></div></div>
-            <button className="secondary-button full" type="button" onClick={install}><Smartphone size={18} /> ติดตั้ง Edge Journal</button>
+            <button className="secondary-button full" type="button" onClick={install}><Smartphone size={18} /> ติดตั้ง Trade Rise</button>
           </section>
         </div>
         <button className="primary-button save-settings" type="submit"><Check size={18} /> บันทึกการตั้งค่า</button>
@@ -1022,7 +1023,7 @@ function TradeModal({ date, trade, currency, onClose, onSave, notify }) {
     <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
       <div className="trade-modal" role="dialog" aria-modal="true" aria-labelledby="trade-modal-title">
         <div className="modal-header">
-          <div><p className="eyebrow">{trade ? 'EDIT TRADE' : 'NEW TRADE'}</p><h2 id="trade-modal-title">{trade ? 'แก้ไขการเทรด' : 'บันทึกการเทรด'}</h2></div>
+          <div><p className="modal-context">{trade ? 'Edit trade' : 'New trade'} · {new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'short', year: 'numeric' }).format(fromDateKey(form.date))}</p><h2 id="trade-modal-title">{trade ? 'แก้ไขการเทรด' : 'บันทึกการเทรด'}</h2></div>
           <button className="icon-button" onClick={onClose} aria-label="ปิด"><X /></button>
         </div>
         <form onSubmit={submit}>

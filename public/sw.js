@@ -1,5 +1,5 @@
-const CACHE = 'edge-journal-v4'
-const APP_SHELL = ['/index.html', '/manifest.webmanifest', '/app-icon.svg']
+const CACHE = 'trade-rise-v5'
+const APP_SHELL = ['/index.html', '/manifest.webmanifest', '/trade-rise-logo.png', '/trade-rise-icon-192.png', '/trade-rise-icon-512.png']
 
 async function precacheApp() {
   const cache = await caches.open(CACHE)
