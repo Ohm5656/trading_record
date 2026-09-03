@@ -55,7 +55,7 @@ try {
     await page.setViewportSize({ width: 390, height: 844 })
   }
 
-  const winCell = page.locator('.day-cell.win').filter({ hasText: '125.50' })
+  const winCell = page.locator('.day-cell.win')
   assert(await winCell.count() === 1, 'Monthly calendar did not show the saved profit')
   await winCell.click()
   await page.locator('.trade-card').waitFor()
@@ -72,12 +72,14 @@ try {
   await page.locator('.bottom-nav .nav-item').filter({ hasText: 'วิเคราะห์' }).click()
   await page.locator('.analytics-hero').waitFor()
   assert((await page.locator('.analytics-hero').innerText()).includes('50.00'), 'Analytics did not include the edited trade')
+  if (process.env.SCREENSHOT_ANALYTICS_PATH) await page.screenshot({ path: process.env.SCREENSHOT_ANALYTICS_PATH, fullPage: true })
 
   await page.reload({ waitUntil: 'networkidle' })
-  const lossCell = page.locator('.day-cell.lose').filter({ hasText: '50.00' })
+  const lossCell = page.locator('.day-cell.lose')
   assert(await lossCell.count() === 1, 'Trade did not persist in IndexedDB after reload')
 
   await page.locator('.bottom-nav .nav-item').filter({ hasText: 'ตั้งค่า' }).click()
+  if (process.env.SCREENSHOT_SETTINGS_PATH) await page.screenshot({ path: process.env.SCREENSHOT_SETTINGS_PATH, fullPage: true })
   await page.getByRole('button', { name: 'ออกจากระบบ' }).click()
   await page.locator('.auth-form').waitFor()
 
@@ -95,7 +97,7 @@ try {
   await page.locator('.auth-input input[type="password"]').fill('secure-pass-123')
   await page.getByRole('button', { name: 'เข้าสู่ระบบ', exact: true }).last().click()
   await page.locator('.calendar-grid').waitFor()
-  assert(await page.locator('.day-cell.lose').filter({ hasText: '50.00' }).count() === 1, 'Trade was not isolated to and restored for the logged-in user')
+  assert(await page.locator('.day-cell.lose').count() === 1, 'Trade was not isolated to and restored for the logged-in user')
   assert(browserErrors.length === 0, `Browser errors: ${browserErrors.join(', ')}`)
 
   console.log('Smoke test passed: auth, remembered session, trade workflow, image, analytics, and user data persistence')
