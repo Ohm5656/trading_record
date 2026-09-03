@@ -112,7 +112,7 @@ async function claimLegacyData(userId) {
 export async function registerUser({ name, email, password }) {
   const normalizedEmail = normalizeEmail(email)
   const existing = await withStore(USERS, 'readonly', (store) => store.index('email').get(normalizedEmail))
-  if (existing) throw new Error('อีเมลนี้มีบัญชีอยู่แล้ว')
+  if (existing) throw new Error('An account already exists for this email.')
 
   const credentials = await hashPassword(password)
   const user = {
@@ -131,9 +131,9 @@ export async function registerUser({ name, email, password }) {
 
 export async function loginUser({ email, password }) {
   const user = await withStore(USERS, 'readonly', (store) => store.index('email').get(normalizeEmail(email)))
-  if (!user) throw new Error('อีเมลหรือรหัสผ่านไม่ถูกต้อง')
+  if (!user) throw new Error('Email or password is incorrect.')
   const credentials = await hashPassword(password, user.passwordSalt)
-  if (!hashesMatch(credentials.hash, user.passwordHash)) throw new Error('อีเมลหรือรหัสผ่านไม่ถูกต้อง')
+  if (!hashesMatch(credentials.hash, user.passwordHash)) throw new Error('Email or password is incorrect.')
   localStorage.setItem(SESSION_KEY, user.id)
   return publicUser(user)
 }
@@ -162,7 +162,7 @@ export function saveTrade(trade, userId) {
 
 export async function removeTrade(id, userId) {
   const trade = await withStore(TRADES, 'readonly', (store) => store.get(id))
-  if (!trade || trade.userId !== userId) throw new Error('ไม่พบรายการนี้')
+  if (!trade || trade.userId !== userId) throw new Error('This trade could not be found.')
   return withStore(TRADES, 'readwrite', (store) => store.delete(id))
 }
 

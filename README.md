@@ -1,32 +1,32 @@
 # Trade Rise Journal
 
-PWA สำหรับบันทึกและวิเคราะห์ผลการเทรด ออกแบบให้ใช้งานได้ดีทั้งบนมือถือและเดสก์ท็อป ข้อมูลทั้งหมดจัดเก็บใน IndexedDB ของอุปกรณ์และเปิดใช้งานแบบออฟไลน์ได้
+A mobile-first PWA for recording and reviewing trades. Data is stored in IndexedDB on the current device and remains available offline.
 
-## ความสามารถหลัก
+## Features
 
-- ปฏิทินผลการเทรดแบบวัน เดือน ปี และ All time
-- สมัครสมาชิกและล็อกอินบนอุปกรณ์ พร้อมจำ session จนกว่าจะออกจากระบบ
-- รหัสผ่านผ่าน PBKDF2 hash และข้อมูลเทรดแยกตามผู้ใช้
-- บันทึก Profit/Loss, วันที่, เวลา, Symbol, Setup, โน้ต และบทเรียน
-- แนบ Screenshot แผนการเทรด (สูงสุด 5 MB ต่อรูป)
-- แก้ไขและลบรายการย้อนหลัง
-- Analytics: P&L สะสม, Win rate, Profit factor, Expectancy และค่าเฉลี่ย
-- ตั้งเป้าหมายรายเดือน/รายปีและเลือกสกุลเงิน
-- ส่งออกและนำเข้าไฟล์สำรอง JSON
-- ติดตั้งเป็น PWA และใช้งานออฟไลน์
+- Day, month, year, and all-time trading views
+- Local accounts with remembered sign-in sessions
+- PBKDF2 password hashing and per-user trade isolation
+- Profit/loss, date, time, symbol, setup, notes, and lessons
+- Trade-chart screenshots up to 5 MB
+- Edit and delete history
+- Win rate, profit factor, expectancy, averages, and an equity curve
+- Monthly and yearly goals with multiple currencies
+- JSON backup and restore
+- Installable PWA with offline support
 
-## เริ่มใช้งาน
+## Getting started
 
 ```bash
 npm install
 npm run dev
 ```
 
-สร้าง production build:
+Create a production build:
 
 ```bash
 npm run build
 npm run preview
 ```
 
-> บัญชีและข้อมูลเก็บเฉพาะในเบราว์เซอร์ของอุปกรณ์นี้ ระบบล็อกอินจึงเหมาะสำหรับการแยกผู้ใช้บนเครื่องเดียวกัน ไม่ได้ sync ข้ามอุปกรณ์ ควรส่งออกไฟล์สำรองเป็นระยะ โดยเฉพาะก่อนล้างข้อมูลเว็บไซต์หรือย้ายอุปกรณ์
+> Accounts and data are stored only in this browser. They do not sync between devices, so export a backup before clearing site data or moving devices.
