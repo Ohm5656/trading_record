@@ -92,5 +92,3 @@ export async function clearAllData() {
     tx.onerror = () => reject(tx.error)
   })
 }
-
-export { defaults }
