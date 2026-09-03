@@ -428,8 +428,7 @@ function AuthScreen({ onAuthenticated }) {
         <div className="auth-logo-wrap"><img src="/trade-rise-logo.png" alt="Trade Rise" /></div>
         <div className="auth-statement">
           <span>TRADING JOURNAL</span>
-          <h1>Every trade tells<br />you something.</h1>
-          <p>Keep the result, chart, and lesson together in one calm trading journal.</p>
+          <h1>Review. Learn.<br />Trade better.</h1>
         </div>
         <small className="auth-footnote">PLAN · TRADE · PROFIT</small>
       </section>
@@ -438,9 +437,7 @@ function AuthScreen({ onAuthenticated }) {
         <div className="auth-mobile-brand"><Brand /></div>
         <div className="auth-form-wrap">
           <header>
-            <p>{mode === 'login' ? 'Welcome back' : 'Your journal starts here'}</p>
             <h2>{mode === 'login' ? 'Sign in' : 'Create your account'}</h2>
-            <span>{mode === 'login' ? 'Pick up where you left off on this device.' : 'Your trades stay separate from other people using this device.'}</span>
           </header>
 
           <div className="auth-tabs" role="tablist">
@@ -461,7 +458,7 @@ function AuthScreen({ onAuthenticated }) {
               {submitting ? 'Checking…' : mode === 'login' ? 'Sign in' : 'Create account'}
               {!submitting && <ArrowUpRight size={19} />}
             </button>
-            <p className="session-note"><Check size={14} /> You will stay signed in on this device until you sign out.</p>
+            <p className="session-note"><Check size={14} /> Stay signed in on this device.</p>
           </form>
         </div>
       </section>
@@ -517,9 +514,7 @@ function CalendarPage(props) {
     <section className="page-section calendar-page">
       <div className="page-heading">
         <div>
-          <p className="page-context">Journal / Calendar</p>
-          <h1>Your trading month</h1>
-          <p className="page-lede">Spot the pattern, then tap any day to review the trades behind it.</p>
+          <h1>Calendar</h1>
         </div>
         <div className="account-chip"><span className="status-dot" />{props.settings.accountName}<ChevronDown size={15} /></div>
       </div>
@@ -599,7 +594,7 @@ function MonthView({ trades, settings, cursor, openDay, goSettings }) {
 
       <div className="calendar-panel panel">
         <div className="panel-heading">
-          <div><h2>Daily results</h2><p>{settings.showWeekends ? 'All days' : 'Weekends hidden'}</p></div>
+          <div><h2>Daily results</h2></div>
           <span className="legend"><i className="gain" /> Profit <i className="loss" /> Loss</span>
         </div>
         <div className={`calendar-grid ${settings.showWeekends ? '' : 'workweek'}`}>
@@ -648,7 +643,7 @@ function DayView({ date, trades, settings, openNewTrade, editTrade, deleteTrade,
       </section>
 
       <div className="section-heading">
-        <div><h2>Trades</h2><p>{dayTrades.length ? 'Everything recorded on this day' : 'No trades recorded on this day'}</p></div>
+        <div><h2>Trades</h2></div>
         <button className="primary-button" onClick={() => openNewTrade(key)}><Plus size={18} /> Add trade</button>
       </div>
 
@@ -661,8 +656,8 @@ function DayView({ date, trades, settings, openNewTrade, editTrade, deleteTrade,
       ) : (
         <EmptyState
           icon={CalendarDays}
-          title="A fresh page"
-          text="Add the result, notes, lesson, and a chart screenshot when you are ready."
+          title="No trades yet"
+          text="Add a result, note, lesson, or chart."
           action={() => openNewTrade(key)}
         />
       )}
@@ -757,7 +752,7 @@ function AllTimeView({ trades, settings, openDay }) {
   return (
     <>
       <article className="all-time-hero panel">
-        <div><p className="page-context">All time</p><h2>Your full record</h2><p>{trades.length} {trades.length === 1 ? 'trade' : 'trades'} · {yearMap.length} {yearMap.length === 1 ? 'year' : 'years'}</p></div>
+        <div><h2>All time</h2><p>{trades.length} {trades.length === 1 ? 'trade' : 'trades'} · {yearMap.length} {yearMap.length === 1 ? 'year' : 'years'}</p></div>
         <strong className={pnl < 0 ? 'loss-text' : 'profit-text'}>{formatMoney(pnl, settings.currency, true)}</strong>
       </article>
       {yearMap.length ? (
@@ -773,7 +768,7 @@ function AllTimeView({ trades, settings, openDay }) {
             )
           })}
         </div>
-      ) : <EmptyState icon={LineChart} title="Build your record" text="Save a trade and its yearly result will appear here." />}
+      ) : <EmptyState icon={LineChart} title="No history yet" text="Your yearly results will appear here." />}
     </>
   )
 }
@@ -813,7 +808,7 @@ function AnalyticsPage({ trades, settings }) {
   return (
     <section className="page-section">
       <div className="page-heading">
-        <div><p className="page-context">Journal / Insights</p><h1>Trading insights</h1><p className="page-lede">A clear view of the habits behind your results.</p></div>
+        <div><h1>Insights</h1></div>
         <div className="account-chip"><span className="status-dot" />{settings.accountName}</div>
       </div>
 
@@ -832,7 +827,7 @@ function AnalyticsPage({ trades, settings }) {
       </div>
 
       <div className="panel monthly-performance">
-        <div className="panel-heading"><div><h2>Monthly results</h2><p>Your latest 6 active months</p></div></div>
+        <div className="panel-heading"><div><h2>Monthly results</h2></div></div>
         {monthly.length ? monthly.map((item) => (
           <div className="month-result" key={item.key}>
             <span>{item.label}</span>
@@ -846,7 +841,7 @@ function AnalyticsPage({ trades, settings }) {
 }
 
 function Metric({ label, value, detail, tone }) {
-  return <article className="metric-card"><p>{label}</p><strong className={tone === 'loss' ? 'loss-text' : tone === 'profit' ? 'profit-text' : ''}>{value}</strong><span>{detail}</span></article>
+  return <article className="metric-card" title={detail}><p>{label}</p><strong className={tone === 'loss' ? 'loss-text' : tone === 'profit' ? 'profit-text' : ''}>{value}</strong></article>
 }
 
 function EquityChart({ values }) {
@@ -935,35 +930,34 @@ function SettingsPage({ user, settings, trades, onSave, onImport, onClear, insta
   return (
     <section className="page-section settings-page">
       <div className="page-heading settings-heading">
-        <div><p className="page-context">Account / Settings</p><h1>Settings</h1><p className="page-lede">Shape the journal around the way you trade.</p></div>
+        <div><h1>Settings</h1></div>
         <button className="logout-button" onClick={onLogout}><LogOut size={17} /> Sign out</button>
       </div>
       <section className="profile-strip">
         <span className="profile-avatar">{user.name.slice(0, 1).toUpperCase()}</span>
         <div><strong>{user.name}</strong><small>{user.email}</small></div>
-        <p><i /> Signed in on this device</p>
       </section>
       <form onSubmit={submit}>
         <div className="settings-grid">
           <section className="settings-card panel">
-            <div className="settings-title"><span><WalletCards /></span><div><h2>Account & currency</h2><p>Used across results and reports</p></div></div>
+            <div className="settings-title"><span><WalletCards /></span><div><h2>Account & currency</h2></div></div>
             <label>Account name<input value={form.accountName} onChange={(event) => change('accountName', event.target.value)} maxLength={40} required /></label>
             <label>Currency<select value={form.currency} onChange={(event) => change('currency', event.target.value)}>{currencies.map((item) => <option key={item}>{item}</option>)}</select></label>
           </section>
 
           <section className="settings-card panel">
-            <div className="settings-title"><span><Target /></span><div><h2>Goals</h2><p>Track progress from the calendar</p></div></div>
+            <div className="settings-title"><span><Target /></span><div><h2>Goals</h2></div></div>
             <label>Monthly goal<input type="number" min="0" step="0.01" value={form.monthlyGoal} onChange={(event) => change('monthlyGoal', event.target.value)} /></label>
             <label>Yearly goal<input type="number" min="0" step="0.01" value={form.yearlyGoal} onChange={(event) => change('yearlyGoal', event.target.value)} /></label>
           </section>
 
           <section className="settings-card panel">
-            <div className="settings-title"><span><CalendarDays /></span><div><h2>Calendar</h2><p>Choose the days you want to review</p></div></div>
+            <div className="settings-title"><span><CalendarDays /></span><div><h2>Calendar</h2></div></div>
             <label className="toggle-row"><span><strong>Show weekends</strong><small>Include Saturday and Sunday</small></span><input type="checkbox" checked={form.showWeekends} onChange={(event) => change('showWeekends', event.target.checked)} /><i /></label>
           </section>
 
           <section className="settings-card panel">
-            <div className="settings-title"><span><Smartphone /></span><div><h2>Install app</h2><p>Use Trade Rise full-screen and offline</p></div></div>
+            <div className="settings-title"><span><Smartphone /></span><div><h2>Install app</h2></div></div>
             <button className="secondary-button full" type="button" onClick={install}><Smartphone size={18} /> Install Trade Rise</button>
           </section>
         </div>
@@ -971,7 +965,7 @@ function SettingsPage({ user, settings, trades, onSave, onImport, onClear, insta
       </form>
 
       <section className="data-section panel">
-        <div className="settings-title"><span><RotateCcw /></span><div><h2>Backup & restore</h2><p>Includes trades, notes, settings, and chart images</p></div></div>
+        <div className="settings-title"><span><RotateCcw /></span><div><h2>Backup & restore</h2></div></div>
         <div className="data-actions">
           <button className="secondary-button" onClick={exportData}><Download size={18} /> Export backup</button>
           <button className="secondary-button" onClick={() => importRef.current?.click()}><Upload size={18} /> Import backup</button>
@@ -1052,7 +1046,7 @@ function TradeModal({ date, trade, currency, onClose, onSave, notify }) {
     <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
       <div className="trade-modal" role="dialog" aria-modal="true" aria-labelledby="trade-modal-title">
         <div className="modal-header">
-          <div><p className="modal-context">{trade ? 'Edit trade' : 'New trade'} · {new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'short', year: 'numeric' }).format(fromDateKey(form.date))}</p><h2 id="trade-modal-title">{trade ? 'Edit trade' : 'Add a trade'}</h2></div>
+          <div><p className="modal-context">{new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'short', year: 'numeric' }).format(fromDateKey(form.date))}</p><h2 id="trade-modal-title">{trade ? 'Edit trade' : 'Add trade'}</h2></div>
           <button className="icon-button" onClick={onClose} aria-label="Close"><X /></button>
         </div>
         <form onSubmit={submit}>
@@ -1065,18 +1059,18 @@ function TradeModal({ date, trade, currency, onClose, onSave, notify }) {
             <label className="amount-field">P&L ({currency})<div><span>{form.side === 'loss' ? '−' : '+'}</span><input ref={amountRef} type="number" inputMode="decimal" min="0.01" step="0.01" placeholder="0.00" value={form.amount} onChange={(event) => change('amount', event.target.value)} /></div></label>
             <label>Date<input type="date" value={form.date} onChange={(event) => change('date', event.target.value)} required /></label>
             <label>Time<input type="time" value={form.time} onChange={(event) => change('time', event.target.value)} required /></label>
-            <label>Market / Symbol<input placeholder="e.g. XAUUSD" value={form.symbol} onChange={(event) => change('symbol', event.target.value)} maxLength={20} /></label>
-            <label className="full-field">Setup<input placeholder="e.g. Breakout + retest" value={form.setup} onChange={(event) => change('setup', event.target.value)} maxLength={80} /></label>
-            <label className="full-field">Note (optional)<textarea placeholder="What happened during the trade?" value={form.note} onChange={(event) => change('note', event.target.value)} maxLength={500} /></label>
-            <label className="full-field">Lesson (optional)<textarea placeholder="What will you carry into the next trade?" value={form.lesson} onChange={(event) => change('lesson', event.target.value)} maxLength={500} /></label>
+            <label>Market / Symbol<input placeholder="XAUUSD" value={form.symbol} onChange={(event) => change('symbol', event.target.value)} maxLength={20} /></label>
+            <label className="full-field">Setup<input placeholder="Breakout + retest" value={form.setup} onChange={(event) => change('setup', event.target.value)} maxLength={80} /></label>
+            <label className="full-field">Note (optional)<textarea placeholder="What happened?" value={form.note} onChange={(event) => change('note', event.target.value)} maxLength={500} /></label>
+            <label className="full-field">Lesson (optional)<textarea placeholder="Next time…" value={form.lesson} onChange={(event) => change('lesson', event.target.value)} maxLength={500} /></label>
           </div>
 
           <div className="upload-field">
-            <div><strong>Trade chart</strong><span>JPG, PNG, or WEBP · up to 5 MB</span></div>
+            <div><strong>Trade chart</strong><span>Image · up to 5 MB</span></div>
             {form.image ? (
               <div className="upload-preview"><img src={form.image.dataUrl} alt="Trade chart preview" /><div><span>{form.image.name}</span><button type="button" onClick={() => change('image', null)}><Trash2 size={16} /> Remove</button></div></div>
             ) : (
-              <label className="upload-button"><ImagePlus size={22} /><span><strong>Add chart image</strong><small>Tap to choose a screenshot</small></span><input type="file" accept="image/jpeg,image/png,image/webp" onChange={handleImage} /></label>
+              <label className="upload-button"><ImagePlus size={22} /><span><strong>Add image</strong></span><input type="file" accept="image/jpeg,image/png,image/webp" onChange={handleImage} /></label>
             )}
           </div>
 
