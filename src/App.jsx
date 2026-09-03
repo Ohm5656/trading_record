@@ -10,8 +10,12 @@ import {
   ChevronRight,
   CircleDollarSign,
   Download,
+  Eye,
+  EyeOff,
   ImagePlus,
   LineChart,
+  LockKeyhole,
+  LogOut,
   Pencil,
   Plus,
   RotateCcw,
@@ -20,6 +24,7 @@ import {
   Target,
   Trash2,
   Upload,
+  UserRound,
   WalletCards,
   WifiOff,
   X,
@@ -27,8 +32,12 @@ import {
 import {
   clearAllData,
   defaults,
+  getCurrentUser,
   getSettings,
   getTrades,
+  loginUser,
+  logoutUser,
+  registerUser,
   removeTrade,
   replaceAllData,
   saveSettings,
@@ -137,6 +146,7 @@ function readImage(file) {
 }
 
 function App() {
+  const [currentUser, setCurrentUser] = useState(null)
   const [trades, setTrades] = useState([])
   const [settings, setSettingsState] = useState(defaults)
   const [page, setPage] = useState('calendar')
@@ -158,10 +168,14 @@ function App() {
   }
 
   useEffect(() => {
-    Promise.all([getTrades(), getSettings()])
-      .then(([storedTrades, storedSettings]) => {
-        setTrades(storedTrades)
-        setSettingsState(storedSettings)
+    getCurrentUser()
+      .then(async (user) => {
+        setCurrentUser(user)
+        if (user) {
+          const [storedTrades, storedSettings] = await Promise.all([getTrades(user.id), getSettings(user.id)])
+          setTrades(storedTrades)
+          setSettingsState(storedSettings)
+        }
       })
       .catch(() => notify('เปิดฐานข้อมูลไม่สำเร็จ ลองรีเฟรชอีกครั้ง'))
       .finally(() => setLoading(false))
@@ -185,7 +199,7 @@ function App() {
   }, [])
 
   async function persistTrade(trade) {
-    await saveTrade(trade)
+    await saveTrade(trade, currentUser.id)
     setTrades((current) => {
       const without = current.filter((item) => item.id !== trade.id)
       return [trade, ...without].sort((a, b) => `${b.date} ${b.time}`.localeCompare(`${a.date} ${a.time}`))
@@ -198,13 +212,13 @@ function App() {
 
   async function deleteTrade(trade) {
     if (!window.confirm(`ลบรายการ ${trade.symbol || 'เทรดนี้'} ใช่ไหม?`)) return
-    await removeTrade(trade.id)
+    await removeTrade(trade.id, currentUser.id)
     setTrades((current) => current.filter((item) => item.id !== trade.id))
     notify('ลบรายการแล้ว')
   }
 
   async function updatePreferences(next) {
-    await saveSettings(next)
+    await saveSettings(currentUser.id, next)
     setSettingsState(next)
     notify('บันทึกการตั้งค่าแล้ว')
   }
@@ -219,9 +233,24 @@ function App() {
   if (loading) {
     return (
       <div className="splash-screen">
-        <div className="brand-mark"><LineChart size={28} /></div>
+        <img className="splash-logo" src="/trade-rise-logo.png" alt="Trade Rise" />
         <p>กำลังเปิดสมุดเทรด…</p>
       </div>
+    )
+  }
+
+  if (!currentUser) {
+    return (
+      <AuthScreen
+        onAuthenticated={async (user) => {
+          setLoading(true)
+          const [storedTrades, storedSettings] = await Promise.all([getTrades(user.id), getSettings(user.id)])
+          setCurrentUser(user)
+          setTrades(storedTrades)
+          setSettingsState(storedSettings)
+          setLoading(false)
+        }}
+      />
     )
   }
 
@@ -238,6 +267,10 @@ function App() {
           <Brand />
           <div className="topbar-actions">
             {!online && <span className="offline-pill"><WifiOff size={14} /> ออฟไลน์</span>}
+            <button className="user-chip" onClick={() => setPage('settings')}>
+              <span>{currentUser.name.slice(0, 1).toUpperCase()}</span>
+              <div><strong>{currentUser.name}</strong><small>{currentUser.email}</small></div>
+            </button>
             <button className="primary-button compact" onClick={() => openNewTrade(dateKey(new Date()))}>
               <Plus size={18} /> เพิ่มการเทรด
             </button>
@@ -266,17 +299,18 @@ function App() {
           {page === 'analytics' && <AnalyticsPage trades={trades} settings={settings} />}
           {page === 'settings' && (
             <SettingsPage
+              user={currentUser}
               settings={settings}
               trades={trades}
               onSave={updatePreferences}
               onImport={async (payload) => {
-                await replaceAllData(payload)
-                setTrades(await getTrades())
-                setSettingsState(await getSettings())
+                await replaceAllData(payload, currentUser.id)
+                setTrades(await getTrades(currentUser.id))
+                setSettingsState(await getSettings(currentUser.id))
                 notify('นำเข้าข้อมูลเรียบร้อย')
               }}
               onClear={async () => {
-                await clearAllData()
+                await clearAllData(currentUser.id)
                 setTrades([])
                 setSettingsState(defaults)
                 notify('ล้างข้อมูลทั้งหมดแล้ว')
@@ -284,6 +318,13 @@ function App() {
               installPrompt={installPrompt}
               onInstalled={() => setInstallPrompt(null)}
               notify={notify}
+              onLogout={() => {
+                logoutUser()
+                setCurrentUser(null)
+                setTrades([])
+                setSettingsState(defaults)
+                setPage('calendar')
+              }}
             />
           )}
         </main>
@@ -321,11 +362,96 @@ function App() {
   )
 }
 
+function AuthScreen({ onAuthenticated }) {
+  const [mode, setMode] = useState('login')
+  const [name, setName] = useState('')
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
+  const [error, setError] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+
+  const switchMode = (nextMode) => {
+    setMode(nextMode)
+    setError('')
+    setPassword('')
+  }
+
+  const submit = async (event) => {
+    event.preventDefault()
+    setError('')
+    if (mode === 'register' && name.trim().length < 2) {
+      setError('กรุณาระบุชื่ออย่างน้อย 2 ตัวอักษร')
+      return
+    }
+    if (password.length < 8) {
+      setError('รหัสผ่านต้องมีอย่างน้อย 8 ตัวอักษร')
+      return
+    }
+    setSubmitting(true)
+    try {
+      const user = mode === 'login'
+        ? await loginUser({ email, password })
+        : await registerUser({ name, email, password })
+      await onAuthenticated(user)
+    } catch (authError) {
+      setError(authError.message || 'เข้าสู่ระบบไม่สำเร็จ')
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <main className="auth-shell">
+      <section className="auth-brand-panel">
+        <div className="auth-logo-wrap"><img src="/trade-rise-logo.png" alt="Trade Rise" /></div>
+        <div className="auth-statement">
+          <span>TRADING JOURNAL</span>
+          <h1>บันทึกให้ชัด<br />เทรดให้มีระบบ</h1>
+          <p>พื้นที่ส่วนตัวสำหรับแผน ผลลัพธ์ และบทเรียนจากทุกการตัดสินใจของคุณ</p>
+        </div>
+        <small className="auth-footnote">PLAN · TRADE · PROFIT</small>
+      </section>
+
+      <section className="auth-form-panel">
+        <div className="auth-mobile-brand"><Brand /></div>
+        <div className="auth-form-wrap">
+          <header>
+            <p>{mode === 'login' ? 'ยินดีต้อนรับกลับ' : 'เริ่มต้นใช้งาน'}</p>
+            <h2>{mode === 'login' ? 'เข้าสู่ระบบ' : 'สร้างบัญชี Trade Rise'}</h2>
+            <span>{mode === 'login' ? 'ข้อมูลและ session ของคุณจะอยู่บนอุปกรณ์นี้' : 'สร้างพื้นที่บันทึกที่แยกจากผู้ใช้อื่นบนเครื่องเดียวกัน'}</span>
+          </header>
+
+          <div className="auth-tabs" role="tablist">
+            <button type="button" className={mode === 'login' ? 'active' : ''} onClick={() => switchMode('login')}>เข้าสู่ระบบ</button>
+            <button type="button" className={mode === 'register' ? 'active' : ''} onClick={() => switchMode('register')}>สมัครสมาชิก</button>
+          </div>
+
+          <form className="auth-form" onSubmit={submit}>
+            {mode === 'register' && (
+              <label>ชื่อที่ใช้แสดง<div className="auth-input"><UserRound size={18} /><input value={name} onChange={(event) => setName(event.target.value)} placeholder="ชื่อของคุณ" autoComplete="name" required /></div></label>
+            )}
+            <label>อีเมล<div className="auth-input"><span className="at-sign">@</span><input type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="name@example.com" autoComplete="email" required /></div></label>
+            <label>รหัสผ่าน<div className="auth-input"><LockKeyhole size={18} /><input type={showPassword ? 'text' : 'password'} value={password} onChange={(event) => setPassword(event.target.value)} placeholder="อย่างน้อย 8 ตัวอักษร" autoComplete={mode === 'login' ? 'current-password' : 'new-password'} required minLength={8} /><button type="button" onClick={() => setShowPassword((current) => !current)} aria-label={showPassword ? 'ซ่อนรหัสผ่าน' : 'แสดงรหัสผ่าน'}>{showPassword ? <EyeOff size={18} /> : <Eye size={18} />}</button></div></label>
+
+            {error && <div className="auth-error" role="alert">{error}</div>}
+
+            <button className="auth-submit" type="submit" disabled={submitting}>
+              {submitting ? 'กำลังตรวจสอบ…' : mode === 'login' ? 'เข้าสู่ระบบ' : 'สร้างบัญชี'}
+              {!submitting && <ArrowUpRight size={19} />}
+            </button>
+            <p className="session-note"><Check size={14} /> ระบบจะจำการเข้าสู่ระบบบนอุปกรณ์นี้จนกว่าคุณจะกดออกจากระบบ</p>
+          </form>
+        </div>
+      </section>
+    </main>
+  )
+}
+
 function Brand() {
   return (
     <div className="brand">
-      <span className="brand-mark"><LineChart size={23} /></span>
-      <span>EDGE<span>JOURNAL</span></span>
+      <img src="/trade-rise-logo.png" alt="Trade Rise" />
+      <span><strong>TRADE RISE</strong><small>Trading journal</small></span>
     </div>
   )
 }
@@ -731,7 +857,7 @@ function makeMonthlyResults(trades) {
   }))
 }
 
-function SettingsPage({ settings, trades, onSave, onImport, onClear, installPrompt, onInstalled, notify }) {
+function SettingsPage({ user, settings, trades, onSave, onImport, onClear, installPrompt, onInstalled, notify, onLogout }) {
   const [form, setForm] = useState(settings)
   const importRef = useRef(null)
   useEffect(() => setForm(settings), [settings])
@@ -778,7 +904,15 @@ function SettingsPage({ settings, trades, onSave, onImport, onClear, installProm
 
   return (
     <section className="page-section settings-page">
-      <div className="page-heading"><div><p className="eyebrow">PREFERENCES</p><h1>ตั้งค่า</h1></div></div>
+      <div className="page-heading settings-heading">
+        <div><p className="eyebrow">ACCOUNT & PREFERENCES</p><h1>ตั้งค่า</h1></div>
+        <button className="logout-button" onClick={onLogout}><LogOut size={17} /> ออกจากระบบ</button>
+      </div>
+      <section className="profile-strip">
+        <span className="profile-avatar">{user.name.slice(0, 1).toUpperCase()}</span>
+        <div><strong>{user.name}</strong><small>{user.email}</small></div>
+        <p><i /> กำลังเข้าสู่ระบบบนอุปกรณ์นี้</p>
+      </section>
       <form onSubmit={submit}>
         <div className="settings-grid">
           <section className="settings-card panel">
