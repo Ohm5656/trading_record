@@ -1,8 +1,17 @@
-const CACHE = 'edge-journal-v2'
-const APP_SHELL = ['/', '/index.html', '/manifest.webmanifest', '/app-icon.svg']
+const CACHE = 'edge-journal-v4'
+const APP_SHELL = ['/index.html', '/manifest.webmanifest', '/app-icon.svg']
+
+async function precacheApp() {
+  const cache = await caches.open(CACHE)
+  const indexResponse = await fetch('/')
+  const markup = await indexResponse.clone().text()
+  const builtAssets = [...markup.matchAll(/(?:src|href)="(\/assets\/[^\"]+)"/g)].map((match) => match[1])
+  await cache.put('/', indexResponse)
+  await cache.addAll([...APP_SHELL, ...new Set(builtAssets)])
+}
 
 self.addEventListener('install', (event) => {
-  event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(APP_SHELL)))
+  event.waitUntil(precacheApp())
   self.skipWaiting()
 })
 
@@ -19,15 +28,21 @@ self.addEventListener('fetch', (event) => {
   if (requestUrl.origin !== self.location.origin) return
 
   event.respondWith(
-    caches.match(event.request).then((cached) => {
-      const fromNetwork = fetch(event.request)
-        .then((response) => {
-          if (response.ok) caches.open(CACHE).then((cache) => cache.put(event.request, response.clone()))
-          return response
-        })
-        .catch(() => cached || (event.request.mode === 'navigate' ? caches.match('/index.html') : undefined))
+    (async () => {
+      const cached = await caches.match(event.request)
+      if (cached) return cached
 
-      return cached || fromNetwork
-    }),
+      try {
+        const response = await fetch(event.request)
+        if (response.ok) {
+          const cache = await caches.open(CACHE)
+          await cache.put(event.request, response.clone())
+        }
+        return response
+      } catch {
+        if (event.request.mode === 'navigate') return caches.match('/index.html')
+        return new Response('', { status: 503, statusText: 'Offline' })
+      }
+    })(),
   )
 })
