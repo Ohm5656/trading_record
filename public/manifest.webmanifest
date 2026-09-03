@@ -1,0 +1,22 @@
+{
+  "id": "/",
+  "name": "Edge Journal — Trading Journal",
+  "short_name": "Edge Journal",
+  "description": "บันทึกและวิเคราะห์ผลการเทรด",
+  "lang": "th",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#050807",
+  "theme_color": "#07100d",
+  "orientation": "any",
+  "categories": ["finance", "productivity"],
+  "icons": [
+    {
+      "src": "/app-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
