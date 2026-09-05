@@ -5015,3 +5015,105 @@ textarea,
     justify-content: center;
   }
 }
+
+/* Daily risk circuit breaker and cash movement records. */
+.day-cell.stop-loss {
+  border-color: #ff575e;
+  background: linear-gradient(145deg, #64242a, #2a1518);
+  box-shadow: inset 0 0 0 1px rgb(255 87 94 / 22%);
+}
+
+.day-cell.stop-loss::before {
+  position: absolute;
+  right: 7px;
+  bottom: 6px;
+  color: #ff9ca1;
+  content: 'LOCKED';
+  font-family: "DM Mono", ui-monospace, monospace;
+  font-size: 7px;
+  font-weight: 700;
+  letter-spacing: .05em;
+}
+
+.today-pulse.stop-loss .pulse-label,
+.today-pulse.stop-loss .pulse-pnl strong {
+  color: #ff7d83;
+}
+
+.stop-loss-alert {
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  margin: 12px 0 4px;
+  border: 1px solid rgb(255 87 94 / 48%);
+  border-radius: 16px;
+  background: rgb(103 29 34 / 42%);
+  color: #ff8c92;
+  padding: 13px 15px;
+}
+
+.stop-loss-alert svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
+}
+
+.stop-loss-alert strong,
+.stop-loss-alert span {
+  display: block;
+}
+
+.stop-loss-alert strong {
+  color: #ffd3d5;
+  font-size: 13px;
+}
+
+.stop-loss-alert span {
+  margin-top: 3px;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.stop-loss-settings .settings-title p {
+  margin: 3px 0 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.trade-side.withdrawal {
+  background: rgb(246 188 84 / 12%);
+  color: var(--amber);
+}
+
+.withdrawal-card {
+  border-color: rgb(246 188 84 / 24%);
+}
+
+.withdrawal-text {
+  color: var(--amber) !important;
+}
+
+.outcome-switch {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.outcome-switch button.active.withdrawal {
+  background: rgb(246 188 84 / 14%);
+  color: #ffd482;
+}
+
+@media (max-width: 700px) {
+  .day-cell.stop-loss::before {
+    right: 4px;
+    bottom: 4px;
+    font-size: 6px;
+  }
+
+  .stop-loss-alert {
+    margin-top: 9px;
+  }
+
+  .outcome-switch button {
+    font-size: 10px;
+  }
+}

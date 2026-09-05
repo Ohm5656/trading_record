@@ -32,7 +32,7 @@ try {
   await page.reload({ waitUntil: 'networkidle' })
 
   const cachedUrls = await page.evaluate(async () => {
-    const cache = await caches.open('trade-rise-v8')
+    const cache = await caches.open('trade-rise-v9')
     return (await cache.keys()).map((request) => request.url)
   })
   if (!cachedUrls.some((url) => url.endsWith('/'))) throw new Error('App shell was not cached')
