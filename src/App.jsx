@@ -649,12 +649,13 @@ function MonthView({ trades, settings, cursor, openDay, goSettings }) {
             const tradingRecords = dayTrades.filter((trade) => !isWithdrawal(trade))
             const dayPnl = totalPnl(tradingRecords)
             const onPlan = isWithinDailyLossBudget(trades, settings, key)
+            const restDay = !tradingRecords.length
             const dayStopped = isDailyStopLossReached(trades, settings, key)
             const isToday = key === dateKey(new Date())
             return (
               <button
                 key={key}
-                className={`day-cell ${onPlan ? 'win on-plan' : 'lose'} ${dayStopped && !onPlan ? 'stop-loss' : ''} ${isToday ? 'today' : ''}`}
+                className={`day-cell ${onPlan ? 'win on-plan' : 'lose'} ${restDay ? 'rest-day' : ''} ${dayStopped && !onPlan ? 'stop-loss' : ''} ${isToday ? 'today' : ''}`}
                 onClick={() => openDay(date)}
                 aria-label={`${date.getDate()} ${onPlan ? 'within daily loss budget' : 'daily loss budget exceeded'} ${formatMoney(dayPnl, settings.currency, true)}`}
               >
@@ -664,7 +665,7 @@ function MonthView({ trades, settings, cursor, openDay, goSettings }) {
                     <strong>{formatCompactMoney(dayPnl, settings.currency)}</strong>
                     <small>{tradingRecords.length} {tradingRecords.length === 1 ? 'trade' : 'trades'}</small>
                   </>
-                ) : <span className="empty-dash">—</span>}
+                ) : <><strong>+{formatCompactMoney(0, settings.currency)}</strong><small>{dayTrades.some(isWithdrawal) ? 'Withdrawal' : 'No trades'}</small></>}
               </button>
             )
           })}
