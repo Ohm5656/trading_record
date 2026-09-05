@@ -1089,6 +1089,10 @@ function TradeModal({ date, trade, locked = false, currency, onClose, onSave, no
       notify('Add the setup before saving this trade.')
       return
     }
+    if (form.side !== 'withdrawal' && !form.image) {
+      notify('Add a trade chart before saving.')
+      return
+    }
     setSaving(true)
     try {
       await onSave({
@@ -1101,6 +1105,7 @@ function TradeModal({ date, trade, locked = false, currency, onClose, onSave, no
         setup: form.side === 'withdrawal' ? '' : form.setup.trim(),
         note: form.note.trim(),
         lesson: form.lesson.trim(),
+        image: form.side === 'withdrawal' ? null : form.image,
       })
     } catch {
       notify("Couldn't save this trade. Try again.")
@@ -1134,14 +1139,16 @@ function TradeModal({ date, trade, locked = false, currency, onClose, onSave, no
             <label className="full-field">Lesson (optional)<textarea placeholder="Next time…" value={form.lesson} onChange={(event) => change('lesson', event.target.value)} maxLength={500} /></label>
           </div>
 
-          <div className="upload-field">
-            <div><strong>Trade chart</strong><span>Image · up to 5 MB</span></div>
-            {form.image ? (
-              <div className="upload-preview"><img src={form.image.dataUrl} alt="Trade chart preview" /><div><span>{form.image.name}</span><button type="button" onClick={() => change('image', null)}><Trash2 size={16} /> Remove</button></div></div>
-            ) : (
-              <label className="upload-button"><ImagePlus size={22} /><span><strong>Add image</strong></span><input type="file" accept="image/jpeg,image/png,image/webp" onChange={handleImage} /></label>
-            )}
-          </div>
+          {form.side !== 'withdrawal' && (
+            <div className="upload-field">
+              <div><strong>Trade chart</strong><span>Required · image up to 5 MB</span></div>
+              {form.image ? (
+                <div className="upload-preview"><img src={form.image.dataUrl} alt="Trade chart preview" /><div><span>{form.image.name}</span><button type="button" onClick={() => change('image', null)}><Trash2 size={16} /> Remove</button></div></div>
+              ) : (
+                <label className="upload-button"><ImagePlus size={22} /><span><strong>Add required image</strong></span><input type="file" accept="image/jpeg,image/png,image/webp" onChange={handleImage} /></label>
+              )}
+            </div>
+          )}
 
           <div className="modal-actions">
             <button type="button" className="secondary-button" onClick={onClose}>Cancel</button>

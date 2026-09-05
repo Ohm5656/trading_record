@@ -47,6 +47,8 @@ try {
   await page.getByLabel('Asset').selectOption('BTCUSD')
   await page.getByLabel('Setup').fill('Breakout retest')
   await page.getByLabel('Note (optional)').fill('Waited for the planned entry')
+  await page.getByRole('button', { name: 'Save trade', exact: true }).click()
+  await page.getByText('Add a trade chart before saving.', { exact: true }).waitFor()
   await page.locator('.upload-button input').setInputFiles({
     name: 'plan.png',
     mimeType: 'image/png',
