@@ -63,7 +63,7 @@ try {
     await page.setViewportSize({ width: 390, height: 844 })
   }
 
-  const winCell = page.locator('.day-cell.win')
+  const winCell = page.locator('.day-cell.on-plan').filter({ hasText: '+$126' })
   assert(await winCell.count() === 1, 'Monthly calendar did not show the saved profit')
   await winCell.click()
   await page.locator('.trade-card').waitFor()
@@ -91,8 +91,9 @@ try {
   if (process.env.SCREENSHOT_ANALYTICS_PATH) await page.screenshot({ path: process.env.SCREENSHOT_ANALYTICS_PATH, fullPage: true })
 
   await page.reload({ waitUntil: 'networkidle' })
-  const lossCell = page.locator('.day-cell.lose')
-  assert(await lossCell.count() === 1, 'Trade did not persist in IndexedDB after reload')
+  await page.locator('.calendar-grid').waitFor()
+  const plannedLossCell = page.locator('.day-cell.on-plan').filter({ hasText: '50' })
+  assert(await plannedLossCell.count() === 1, 'A loss within the daily budget was not preserved as on-plan after reload')
 
   await page.locator('.bottom-nav .nav-item').filter({ hasText: 'Settings' }).click()
   if (process.env.SCREENSHOT_SETTINGS_PATH) await page.screenshot({ path: process.env.SCREENSHOT_SETTINGS_PATH, fullPage: true })
@@ -113,7 +114,7 @@ try {
   await page.locator('.auth-input input[type="password"]').fill('secure-pass-123')
   await page.getByRole('button', { name: 'Sign in', exact: true }).last().click()
   await page.locator('.calendar-grid').waitFor()
-  assert(await page.locator('.day-cell.lose').count() === 1, 'Trade was not isolated to and restored for the logged-in user')
+  assert(await page.locator('.day-cell.on-plan').filter({ hasText: '50' }).count() === 1, 'Trade was not isolated to and restored for the logged-in user')
   assert(browserErrors.length === 0, `Browser errors: ${browserErrors.join(', ')}`)
 
   console.log('Smoke test passed: auth, remembered session, trade workflow, image, analytics, and user data persistence')

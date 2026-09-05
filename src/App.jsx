@@ -93,6 +93,14 @@ function isDailyStopLossReached(trades, settings, date) {
   return limit > 0 && totalPnl(trades.filter((trade) => trade.date === date)) <= -limit
 }
 
+function isWithinDailyLossBudget(trades, settings, date) {
+  const tradingRecords = trades.filter((trade) => trade.date === date && !isWithdrawal(trade))
+  if (!tradingRecords.length) return true
+  const limit = dailyStopLossFor(settings, date)
+  const pnl = totalPnl(tradingRecords)
+  return limit > 0 ? pnl >= -limit : pnl >= 0
+}
+
 function totalPnl(trades) {
   return trades.reduce((total, trade) => total + pnlOf(trade), 0)
 }
@@ -638,21 +646,23 @@ function MonthView({ trades, settings, cursor, openDay, goSettings }) {
             if (!date) return <span className="day-cell blank" key={`blank-${index}`} />
             const key = dateKey(date)
             const dayTrades = trades.filter((trade) => trade.date === key)
-            const dayPnl = totalPnl(dayTrades)
+            const tradingRecords = dayTrades.filter((trade) => !isWithdrawal(trade))
+            const dayPnl = totalPnl(tradingRecords)
+            const onPlan = isWithinDailyLossBudget(trades, settings, key)
             const dayStopped = isDailyStopLossReached(trades, settings, key)
             const isToday = key === dateKey(new Date())
             return (
               <button
                 key={key}
-                className={`day-cell ${dayPnl > 0 ? 'win' : ''} ${dayPnl < 0 ? 'lose' : ''} ${dayStopped ? 'stop-loss' : ''} ${isToday ? 'today' : ''}`}
+                className={`day-cell ${onPlan ? 'win on-plan' : 'lose'} ${dayStopped && !onPlan ? 'stop-loss' : ''} ${isToday ? 'today' : ''}`}
                 onClick={() => openDay(date)}
-                aria-label={`${date.getDate()} ${dayStopped ? 'daily loss limit reached' : dayPnl ? formatMoney(dayPnl, settings.currency, true) : 'No trades'}`}
+                aria-label={`${date.getDate()} ${onPlan ? 'within daily loss budget' : 'daily loss budget exceeded'} ${formatMoney(dayPnl, settings.currency, true)}`}
               >
                 <span className="day-number">{date.getDate()}</span>
-                {dayTrades.length ? (
+                {tradingRecords.length ? (
                   <>
                     <strong>{formatCompactMoney(dayPnl, settings.currency)}</strong>
-                    <small>{dayTrades.length} {dayTrades.length === 1 ? 'trade' : 'trades'}</small>
+                    <small>{tradingRecords.length} {tradingRecords.length === 1 ? 'trade' : 'trades'}</small>
                   </>
                 ) : <span className="empty-dash">—</span>}
               </button>
@@ -747,6 +757,7 @@ function YearView({ trades, settings, cursor, openDay, goSettings }) {
             year={cursor.getFullYear()}
             month={month}
             trades={trades}
+            settings={settings}
             currency={settings.currency}
             onOpen={(date) => openDay(date)}
           />
@@ -756,7 +767,7 @@ function YearView({ trades, settings, cursor, openDay, goSettings }) {
   )
 }
 
-function MiniMonth({ year, month, trades, currency, onOpen }) {
+function MiniMonth({ year, month, trades, settings, currency, onOpen }) {
   const date = new Date(year, month, 1, 12)
   const cells = monthCells(date, true)
   const monthTrades = trades.filter((trade) => {
@@ -773,8 +784,10 @@ function MiniMonth({ year, month, trades, currency, onOpen }) {
       <div className="heat-grid">
         {cells.map((day, index) => {
           if (!day) return <i className="heat blank" key={`b-${index}`} />
-          const pnl = totalPnl(trades.filter((trade) => trade.date === dateKey(day)))
-          return <button key={dateKey(day)} className={`heat ${pnl > 0 ? 'win' : pnl < 0 ? 'lose' : ''}`} onClick={() => onOpen(day)} title={`${day.getDate()}: ${formatMoney(pnl, currency, true)}`} />
+          const key = dateKey(day)
+          const pnl = totalPnl(trades.filter((trade) => trade.date === key && !isWithdrawal(trade)))
+          const onPlan = isWithinDailyLossBudget(trades, settings, key)
+          return <button key={key} className={`heat ${onPlan ? 'win' : 'lose'}`} onClick={() => onOpen(day)} title={`${day.getDate()}: ${formatMoney(pnl, currency, true)}`} />
         })}
       </div>
       <p>{monthTrades.length} {monthTrades.length === 1 ? 'trade' : 'trades'}</p>
