@@ -1,4 +1,4 @@
-const CACHE = 'trade-rise-v11'
+const CACHE = 'trade-rise-v12'
 const APP_SHELL = ['/index.html', '/manifest.webmanifest', '/trade-rise-logo.png', '/trade-rise-icon-192.png', '/trade-rise-icon-512.png']
 
 async function precacheApp() {

@@ -36,7 +36,8 @@ try {
   await page.getByRole('button', { name: 'Create account', exact: true }).last().click()
   await page.locator('.calendar-grid').waitFor()
   const restDays = page.locator('.day-cell.rest-day')
-  assert(await restDays.count() > 0, 'Days without trades were not marked as rest days')
+  const todayDay = Number(new Intl.DateTimeFormat('en-US', { day: 'numeric', timeZone: 'Asia/Bangkok' }).format(new Date()))
+  assert(await restDays.count() === todayDay, 'Only past and current no-trade days should be marked as rest days')
   assert((await restDays.first().locator('strong').innerText()).startsWith('+$0'), 'Rest days did not show a green +$0 result')
 
   await page.locator('.bottom-nav .nav-item').filter({ hasText: 'Settings' }).click()
