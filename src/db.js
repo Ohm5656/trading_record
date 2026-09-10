@@ -11,6 +11,7 @@ export const defaults = {
   monthlyGoal: 1000,
   yearlyGoal: 12000,
   dailyStopLossByMonth: {},
+  dailyTradeLimit: 0,
   showWeekends: true,
 }
 

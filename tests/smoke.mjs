@@ -74,6 +74,15 @@ try {
   assert((await page.locator('.trade-card').innerText()).includes('BTCUSD'), 'Day view did not show the saved trade')
   assert(await page.locator('.image-thumb').count() === 1, 'Uploaded trade image was not saved')
 
+  await page.locator('.bottom-nav .nav-item').filter({ hasText: 'Settings' }).click()
+  await page.getByLabel('Maximum trades per day').fill('1')
+  await page.getByRole('button', { name: 'Save settings', exact: true }).click()
+  await page.getByText('Settings saved', { exact: true }).waitFor()
+  await page.locator('.bottom-nav .nav-item').filter({ hasText: 'Calendar' }).click()
+  await page.locator('.mobile-fab').click()
+  assert(await page.getByRole('button', { name: 'Profit', exact: true }).isDisabled(), 'Trading should be locked after the daily trade limit')
+  await page.getByRole('button', { name: 'Close' }).click()
+
   await page.getByRole('button', { name: 'Edit' }).click()
   await page.getByRole('button', { name: 'Loss' }).click()
   await page.locator('.amount-field input').fill('50')

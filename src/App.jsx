@@ -12,6 +12,7 @@ import {
   Download,
   Eye,
   EyeOff,
+  Hash,
   ImagePlus,
   LineChart,
   LockKeyhole,
@@ -88,9 +89,43 @@ function dailyStopLossFor(settings, date) {
   return Math.max(0, Number(settings.dailyStopLossByMonth?.[monthKey(date)]) || 0)
 }
 
+function dailyTradeLimitFor(settings) {
+  return Math.max(0, Math.floor(Number(settings.dailyTradeLimit) || 0))
+}
+
+function dailyTradeCount(trades, date) {
+  return trades.filter((trade) => trade.date === date && !isWithdrawal(trade)).length
+}
+
 function isDailyStopLossReached(trades, settings, date) {
   const limit = dailyStopLossFor(settings, date)
   return limit > 0 && totalPnl(trades.filter((trade) => trade.date === date)) <= -limit
+}
+
+function isDailyTradeLimitReached(trades, settings, date) {
+  const limit = dailyTradeLimitFor(settings)
+  return limit > 0 && dailyTradeCount(trades, date) >= limit
+}
+
+function dailyTradingLockReason(trades, settings, date) {
+  if (isDailyStopLossReached(trades, settings, date)) {
+    return {
+      type: 'loss',
+      title: 'Daily loss limit reached',
+      message: `Loss reached ${formatMoney(dailyStopLossFor(settings, date), settings.currency)}. Do not trade again today.`,
+      notification: 'Daily loss limit reached. Trading is locked for this day.',
+    }
+  }
+  if (isDailyTradeLimitReached(trades, settings, date)) {
+    const limit = dailyTradeLimitFor(settings)
+    return {
+      type: 'trades',
+      title: 'Daily trade limit reached',
+      message: `${limit} ${limit === 1 ? 'trade' : 'trades'} recorded today. Do not trade again today.`,
+      notification: 'Daily trade limit reached. Trading is locked for this day.',
+    }
+  }
+  return null
 }
 
 function isWithinDailyLossBudget(trades, settings, date) {
@@ -242,13 +277,14 @@ function App() {
   }, [page])
 
   async function persistTrade(trade) {
-    if (!tradeModal?.trade && !isWithdrawal(trade) && isDailyStopLossReached(trades, settings, trade.date)) {
-      notify('Daily loss limit reached. Trading is locked for this day.')
+    const currentLockReason = dailyTradingLockReason(trades, settings, trade.date)
+    if (!tradeModal?.trade && !isWithdrawal(trade) && currentLockReason) {
+      notify(currentLockReason.notification)
       return
     }
     await saveTrade(trade, currentUser.id)
     const nextTrades = [trade, ...trades.filter((item) => item.id !== trade.id)]
-    const dailyLimitReached = !isWithdrawal(trade) && isDailyStopLossReached(nextTrades, settings, trade.date)
+    const dailyLimitReached = !isWithdrawal(trade) ? dailyTradingLockReason(nextTrades, settings, trade.date) : null
     setTrades((current) => {
       const without = current.filter((item) => item.id !== trade.id)
       return [trade, ...without].sort((a, b) => `${b.date} ${b.time}`.localeCompare(`${a.date} ${a.time}`))
@@ -256,7 +292,7 @@ function App() {
     setSelectedDate(trade.date)
     setCursor(fromDateKey(trade.date))
     setTradeModal(null)
-    notify(dailyLimitReached ? 'Daily loss limit reached. Trading is locked for this day.' : tradeModal?.trade ? 'Trade updated' : isWithdrawal(trade) ? 'Withdrawal saved' : 'Trade saved')
+    notify(dailyLimitReached ? dailyLimitReached.notification : tradeModal?.trade ? 'Trade updated' : isWithdrawal(trade) ? 'Withdrawal saved' : 'Trade saved')
   }
 
   async function deleteTrade(trade) {
@@ -273,9 +309,10 @@ function App() {
   }
 
   const openNewTrade = (date = selectedDate) => {
-    if (isDailyStopLossReached(trades, settings, date)) {
+    const lockReason = dailyTradingLockReason(trades, settings, date)
+    if (lockReason) {
       setTradeModal({ date, trade: null, locked: true })
-      notify('Daily loss limit reached. Only a withdrawal can be added today.')
+      notify(`${lockReason.title}. Only a withdrawal can be added today.`)
       return
     }
     setTradeModal({ date, trade: null })
@@ -535,9 +572,10 @@ function NavItems({ page, setPage }) {
 
 function TodayPulse({ trades, settings, onOpenToday }) {
   const today = new Date()
-  const todayTrades = trades.filter((trade) => trade.date === dateKey(today) && !isWithdrawal(trade))
+  const todayKey = dateKey(today)
+  const todayTrades = trades.filter((trade) => trade.date === todayKey && !isWithdrawal(trade))
   const pnl = totalPnl(todayTrades)
-  const stopped = isDailyStopLossReached(trades, settings, dateKey(today))
+  const stopped = dailyTradingLockReason(trades, settings, todayKey)
   return (
     <button className={`today-pulse ${stopped ? 'stop-loss' : ''}`} onClick={onOpenToday}>
       <span className="pulse-label"><i /> {stopped ? 'Trading locked' : 'Today'}</span>
@@ -653,12 +691,12 @@ function MonthView({ trades, settings, cursor, openDay, goSettings }) {
             const restDay = !tradingRecords.length && !futureDay
             const onPlan = (!futureDay || tradingRecords.length) && isWithinDailyLossBudget(trades, settings, key)
             const overBudget = tradingRecords.length && !onPlan
-            const dayStopped = isDailyStopLossReached(trades, settings, key)
+            const dayStopped = dailyTradingLockReason(trades, settings, key)
             const isToday = key === todayKey
             return (
               <button
                 key={key}
-                className={`day-cell ${onPlan ? 'win on-plan' : ''} ${overBudget ? 'lose' : ''} ${restDay ? 'rest-day' : ''} ${dayStopped && overBudget ? 'stop-loss' : ''} ${isToday ? 'today' : ''}`}
+                className={`day-cell ${onPlan ? 'win on-plan' : ''} ${overBudget ? 'lose' : ''} ${restDay ? 'rest-day' : ''} ${dayStopped ? 'stop-loss' : ''} ${isToday ? 'today' : ''}`}
                 onClick={() => openDay(date)}
                 aria-label={futureDay && !tradingRecords.length ? `${date.getDate()} future date` : `${date.getDate()} ${onPlan ? 'within daily loss budget' : 'daily loss budget exceeded'} ${formatMoney(dayPnl, settings.currency, true)}`}
               >
@@ -684,8 +722,7 @@ function DayView({ date, trades, settings, openNewTrade, editTrade, deleteTrade,
   const tradingRecords = dayTrades.filter((trade) => !isWithdrawal(trade))
   const wins = tradingRecords.filter((trade) => pnlOf(trade) > 0)
   const losses = tradingRecords.filter((trade) => pnlOf(trade) < 0)
-  const stopLoss = dailyStopLossFor(settings, key)
-  const stopped = isDailyStopLossReached(trades, settings, key)
+  const stopped = dailyTradingLockReason(trades, settings, key)
   return (
     <>
       <section className="day-ledger">
@@ -695,7 +732,7 @@ function DayView({ date, trades, settings, openNewTrade, editTrade, deleteTrade,
         <div className="ledger-stat loss"><span>Loss</span><strong>{formatMoney(Math.abs(totalPnl(losses)), settings.currency)}</strong><small>{losses.length} {losses.length === 1 ? 'trade' : 'trades'}</small></div>
       </section>
 
-      {stopped && <section className="stop-loss-alert" role="alert"><LockKeyhole size={19} /><div><strong>Daily loss limit reached</strong><span>Loss reached {formatMoney(stopLoss, settings.currency)}. Do not trade again today.</span></div></section>}
+      {stopped && <section className="stop-loss-alert" role="alert"><LockKeyhole size={19} /><div><strong>{stopped.title}</strong><span>{stopped.message}</span></div></section>}
 
       <div className="section-heading">
         <div><h2>Trades</h2></div>
@@ -966,7 +1003,13 @@ function SettingsPage({ user, settings, trades, onSave, onImport, onClear, insta
     const dailyStopLossByMonth = Object.fromEntries(Object.entries(form.dailyStopLossByMonth || {})
       .map(([month, value]) => [month, Math.max(0, Number(value) || 0)])
       .filter(([, value]) => value > 0))
-    onSave({ ...form, monthlyGoal: Math.max(0, Number(form.monthlyGoal) || 0), yearlyGoal: Math.max(0, Number(form.yearlyGoal) || 0), dailyStopLossByMonth })
+    onSave({
+      ...form,
+      monthlyGoal: Math.max(0, Number(form.monthlyGoal) || 0),
+      yearlyGoal: Math.max(0, Number(form.yearlyGoal) || 0),
+      dailyStopLossByMonth,
+      dailyTradeLimit: Math.max(0, Math.floor(Number(form.dailyTradeLimit) || 0)),
+    })
   }
   const exportData = () => {
     const content = JSON.stringify({ version: 1, exportedAt: new Date().toISOString(), settings, trades }, null, 2)
@@ -1031,6 +1074,11 @@ function SettingsPage({ user, settings, trades, onSave, onImport, onClear, insta
             <div className="settings-title"><span><LockKeyhole /></span><div><h2>Daily stop loss</h2><p>Locks new trades after the day reaches this loss.</p></div></div>
             <label>Month<input type="month" value={limitMonth} onChange={(event) => setLimitMonth(event.target.value)} /></label>
             <label>Maximum loss per day<input type="number" min="0" step="0.01" placeholder="No limit" value={form.dailyStopLossByMonth?.[limitMonth] || ''} onChange={(event) => changeDailyStopLoss(event.target.value)} /></label>
+          </section>
+
+          <section className="settings-card panel stop-loss-settings">
+            <div className="settings-title"><span><Hash /></span><div><h2>Daily trade limit</h2><p>Locks new trades after the daily trade count is reached.</p></div></div>
+            <label>Maximum trades per day<input type="number" min="0" step="1" placeholder="No limit" value={form.dailyTradeLimit || ''} onChange={(event) => change('dailyTradeLimit', event.target.value)} /></label>
           </section>
 
           <section className="settings-card panel">
