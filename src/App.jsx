@@ -19,6 +19,7 @@ import {
   LogOut,
   Pencil,
   Plus,
+  RefreshCw,
   RotateCcw,
   Settings as SettingsIcon,
   Smartphone,
@@ -55,6 +56,19 @@ const viewOptions = [
 const weekdayLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 const currencies = ['USD', 'THB', 'EUR', 'GBP', 'JPY', 'SGD']
 const assets = ['XAUUSD', 'BTCUSD']
+const activeSides = ['long', 'short']
+const marketProfiles = {
+  XAUUSD: {
+    source: 'Yahoo Finance gold futures proxy',
+    sizeLabel: 'lots',
+    contractSize: 100,
+  },
+  BTCUSD: {
+    source: 'Binance spot BTCUSDT',
+    sizeLabel: 'BTC',
+    contractSize: 1,
+  },
+}
 
 function dateKey(date) {
   const year = date.getFullYear()
@@ -72,13 +86,47 @@ function nowTime() {
   return new Date().toTimeString().slice(0, 5)
 }
 
-function pnlOf(trade) {
+function marketPriceFor(symbol, marketPrices = {}) {
+  const price = Number(marketPrices[symbol]?.price)
+  return Number.isFinite(price) && price > 0 ? price : null
+}
+
+function tradePrice(trade, marketPrices = {}) {
+  const exit = Number(trade.exitPrice)
+  if (trade.status === 'closed' && Number.isFinite(exit) && exit > 0) return exit
+  const live = marketPriceFor(trade.symbol, marketPrices)
+  if (live) return live
+  const current = Number(trade.currentPrice)
+  if (Number.isFinite(current) && current > 0) return current
+  const entry = Number(trade.entryPrice)
+  return Number.isFinite(entry) && entry > 0 ? entry : 0
+}
+
+function calculatedPnl(trade, price) {
+  const entry = Number(trade.entryPrice)
+  const size = Number(trade.positionSize)
+  if (!Number.isFinite(entry) || entry <= 0 || !Number.isFinite(size) || size <= 0 || !Number.isFinite(price) || price <= 0) return 0
+  const profile = marketProfiles[trade.symbol] || { contractSize: 1 }
+  const direction = trade.side === 'short' ? -1 : 1
+  return (price - entry) * direction * size * profile.contractSize
+}
+
+function pnlOf(trade, marketPrices = {}) {
   if (trade.side === 'withdrawal') return 0
+  if (activeSides.includes(trade.side)) return calculatedPnl(trade, tradePrice(trade, marketPrices))
   return trade.side === 'loss' ? -Math.abs(Number(trade.amount)) : Math.abs(Number(trade.amount))
 }
 
 function isWithdrawal(record) {
   return record.side === 'withdrawal'
+}
+
+function isTradingRecord(record) {
+  return !isWithdrawal(record)
+}
+
+function isOpenTrade(record) {
+  return activeSides.includes(record.side) && record.status !== 'closed'
 }
 
 function monthKey(value) {
@@ -94,12 +142,12 @@ function dailyTradeLimitFor(settings) {
 }
 
 function dailyTradeCount(trades, date) {
-  return trades.filter((trade) => trade.date === date && !isWithdrawal(trade)).length
+  return trades.filter((trade) => trade.date === date && isTradingRecord(trade)).length
 }
 
-function isDailyStopLossReached(trades, settings, date) {
+function isDailyStopLossReached(trades, settings, date, marketPrices) {
   const limit = dailyStopLossFor(settings, date)
-  return limit > 0 && totalPnl(trades.filter((trade) => trade.date === date)) <= -limit
+  return limit > 0 && totalPnl(trades.filter((trade) => trade.date === date), marketPrices) <= -limit
 }
 
 function isDailyTradeLimitReached(trades, settings, date) {
@@ -107,8 +155,8 @@ function isDailyTradeLimitReached(trades, settings, date) {
   return limit > 0 && dailyTradeCount(trades, date) >= limit
 }
 
-function dailyTradingLockReason(trades, settings, date) {
-  if (isDailyStopLossReached(trades, settings, date)) {
+function dailyTradingLockReason(trades, settings, date, marketPrices) {
+  if (isDailyStopLossReached(trades, settings, date, marketPrices)) {
     return {
       type: 'loss',
       title: 'Daily loss limit reached',
@@ -128,16 +176,28 @@ function dailyTradingLockReason(trades, settings, date) {
   return null
 }
 
-function isWithinDailyLossBudget(trades, settings, date) {
-  const tradingRecords = trades.filter((trade) => trade.date === date && !isWithdrawal(trade))
+function isWithinDailyLossBudget(trades, settings, date, marketPrices) {
+  const tradingRecords = trades.filter((trade) => trade.date === date && isTradingRecord(trade))
   if (!tradingRecords.length) return true
   const limit = dailyStopLossFor(settings, date)
-  const pnl = totalPnl(tradingRecords)
+  const pnl = totalPnl(tradingRecords, marketPrices)
   return limit > 0 ? pnl >= -limit : pnl >= 0
 }
 
-function totalPnl(trades) {
-  return trades.reduce((total, trade) => total + pnlOf(trade), 0)
+function totalPnl(trades, marketPrices = {}) {
+  return trades.reduce((total, trade) => total + pnlOf(trade, marketPrices), 0)
+}
+
+function targetPnl(trade, key) {
+  const price = Number(trade[key])
+  return calculatedPnl(trade, price)
+}
+
+function riskReward(trade) {
+  const reward = Math.abs(targetPnl(trade, 'tpPrice'))
+  const risk = Math.abs(targetPnl(trade, 'slPrice'))
+  if (!reward || !risk) return '—'
+  return `${(reward / risk).toFixed(2)}R`
 }
 
 function formatMoney(value, currency, signed = false) {
@@ -206,6 +266,31 @@ function safeId() {
   return globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`
 }
 
+async function fetchMarketPrice(symbol) {
+  if (symbol === 'BTCUSD') {
+    const response = await fetch('https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT')
+    if (!response.ok) throw new Error('BTC price request failed')
+    const data = await response.json()
+    const price = Number(data.price)
+    if (!Number.isFinite(price) || price <= 0) throw new Error('BTC price was invalid')
+    return { price, source: marketProfiles.BTCUSD.source, at: new Date().toISOString() }
+  }
+
+  if (symbol === 'XAUUSD') {
+    const response = await fetch('https://query1.finance.yahoo.com/v8/finance/chart/GC=F?interval=1m&range=1d')
+    if (!response.ok) throw new Error('Gold price request failed')
+    const data = await response.json()
+    const result = data.chart?.result?.[0]
+    const quote = result?.indicators?.quote?.[0]?.close || []
+    const lastClose = [...quote].reverse().find((value) => Number.isFinite(Number(value)) && Number(value) > 0)
+    const price = Number(result?.meta?.regularMarketPrice || lastClose)
+    if (!Number.isFinite(price) || price <= 0) throw new Error('Gold price was invalid')
+    return { price, source: marketProfiles.XAUUSD.source, at: new Date().toISOString() }
+  }
+
+  throw new Error('Unsupported market')
+}
+
 function readImage(file) {
   return new Promise((resolve, reject) => {
     if (file.size > 5 * 1024 * 1024) {
@@ -232,6 +317,8 @@ function App() {
   const [toast, setToast] = useState('')
   const [loading, setLoading] = useState(true)
   const [online, setOnline] = useState(navigator.onLine)
+  const [marketPrices, setMarketPrices] = useState({})
+  const [priceStatus, setPriceStatus] = useState({ state: 'idle', message: '' })
   const [installPrompt, setInstallPrompt] = useState(null)
   const toastTimer = useRef(null)
 
@@ -276,15 +363,48 @@ function App() {
     window.scrollTo(0, 0)
   }, [page])
 
+  async function refreshMarketPrices({ quiet = false } = {}) {
+    if (!navigator.onLine) {
+      setPriceStatus({ state: 'offline', message: 'Offline' })
+      return
+    }
+    if (!quiet) setPriceStatus({ state: 'loading', message: 'Refreshing prices' })
+    try {
+      const entries = await Promise.allSettled(assets.map(async (symbol) => [symbol, await fetchMarketPrice(symbol)]))
+      const nextPrices = {}
+      const failed = []
+      entries.forEach((entry, index) => {
+        if (entry.status === 'fulfilled') nextPrices[entry.value[0]] = entry.value[1]
+        else failed.push(assets[index])
+      })
+      setMarketPrices((current) => ({ ...current, ...nextPrices }))
+      setPriceStatus({
+        state: failed.length ? 'partial' : 'ready',
+        message: failed.length ? `${failed.join(', ')} price unavailable` : 'Live prices ready',
+      })
+      if (!quiet) notify(failed.length ? `${failed.join(', ')} price unavailable` : 'Prices refreshed')
+    } catch {
+      setPriceStatus({ state: 'error', message: 'Price feed unavailable' })
+      if (!quiet) notify('Price feed unavailable')
+    }
+  }
+
+  useEffect(() => {
+    if (!currentUser || !online) return undefined
+    refreshMarketPrices({ quiet: true })
+    const timer = window.setInterval(() => refreshMarketPrices({ quiet: true }), 30000)
+    return () => window.clearInterval(timer)
+  }, [currentUser, online])
+
   async function persistTrade(trade) {
-    const currentLockReason = dailyTradingLockReason(trades, settings, trade.date)
+    const currentLockReason = dailyTradingLockReason(trades, settings, trade.date, marketPrices)
     if (!tradeModal?.trade && !isWithdrawal(trade) && currentLockReason) {
       notify(currentLockReason.notification)
       return
     }
     await saveTrade(trade, currentUser.id)
     const nextTrades = [trade, ...trades.filter((item) => item.id !== trade.id)]
-    const dailyLimitReached = !isWithdrawal(trade) ? dailyTradingLockReason(nextTrades, settings, trade.date) : null
+    const dailyLimitReached = !isWithdrawal(trade) ? dailyTradingLockReason(nextTrades, settings, trade.date, marketPrices) : null
     setTrades((current) => {
       const without = current.filter((item) => item.id !== trade.id)
       return [trade, ...without].sort((a, b) => `${b.date} ${b.time}`.localeCompare(`${a.date} ${a.time}`))
@@ -309,7 +429,7 @@ function App() {
   }
 
   const openNewTrade = (date = selectedDate) => {
-    const lockReason = dailyTradingLockReason(trades, settings, date)
+    const lockReason = dailyTradingLockReason(trades, settings, date, marketPrices)
     if (lockReason) {
       setTradeModal({ date, trade: null, locked: true })
       notify(`${lockReason.title}. Only a withdrawal can be added today.`)
@@ -362,7 +482,7 @@ function App() {
               <div><strong>{currentUser.name}</strong><small>{currentUser.email}</small></div>
             </button>
             <button className="primary-button compact" onClick={() => openNewTrade(dateKey(new Date()))}>
-              <Plus size={18} /> Add trade
+              <Plus size={18} /> Start trade
             </button>
           </div>
         </header>
@@ -370,6 +490,8 @@ function App() {
         <TodayPulse
           trades={trades}
           settings={settings}
+          marketPrices={marketPrices}
+          priceStatus={priceStatus}
           onOpenToday={() => {
             setPage('calendar')
             openDay(new Date())
@@ -387,6 +509,7 @@ function App() {
               setCursor={setCursor}
               selectedDate={selectedDate}
               setSelectedDate={setSelectedDate}
+              marketPrices={marketPrices}
               openDay={openDay}
               openNewTrade={openNewTrade}
               editTrade={(trade) => setTradeModal({ date: trade.date, trade })}
@@ -395,7 +518,7 @@ function App() {
               goSettings={() => setPage('settings')}
             />
           )}
-          {page === 'analytics' && <AnalyticsPage trades={trades} settings={settings} />}
+          {page === 'analytics' && <AnalyticsPage trades={trades} settings={settings} marketPrices={marketPrices} />}
           {page === 'settings' && (
             <SettingsPage
               user={currentUser}
@@ -433,7 +556,7 @@ function App() {
         <NavItems page={page} setPage={setPage} />
       </nav>
 
-      <button className="mobile-fab" aria-label="Add trade" onClick={() => openNewTrade(dateKey(new Date()))}>
+      <button className="mobile-fab" aria-label="Start trade" onClick={() => openNewTrade(dateKey(new Date()))}>
         <Plus size={27} />
       </button>
 
@@ -444,6 +567,9 @@ function App() {
           trade={tradeModal.trade}
           locked={tradeModal.locked}
           currency={settings.currency}
+          marketPrices={marketPrices}
+          priceStatus={priceStatus}
+          onRefreshPrices={refreshMarketPrices}
           onClose={() => setTradeModal(null)}
           onSave={persistTrade}
           notify={notify}
@@ -570,19 +696,20 @@ function NavItems({ page, setPage }) {
   })
 }
 
-function TodayPulse({ trades, settings, onOpenToday }) {
+function TodayPulse({ trades, settings, marketPrices, priceStatus, onOpenToday }) {
   const today = new Date()
   const todayKey = dateKey(today)
-  const todayTrades = trades.filter((trade) => trade.date === todayKey && !isWithdrawal(trade))
-  const pnl = totalPnl(todayTrades)
-  const stopped = dailyTradingLockReason(trades, settings, todayKey)
+  const todayTrades = trades.filter((trade) => trade.date === todayKey && isTradingRecord(trade))
+  const openTrades = todayTrades.filter(isOpenTrade).length
+  const pnl = totalPnl(todayTrades, marketPrices)
+  const stopped = dailyTradingLockReason(trades, settings, todayKey, marketPrices)
   return (
     <button className={`today-pulse ${stopped ? 'stop-loss' : ''}`} onClick={onOpenToday}>
       <span className="pulse-label"><i /> {stopped ? 'Trading locked' : 'Today'}</span>
       <span className="pulse-date">{new Intl.DateTimeFormat(locale, { weekday: 'short', day: 'numeric', month: 'short' }).format(today)}</span>
       <span><small>Account</small><strong>{settings.accountName}</strong></span>
-      <span><small>Trades</small><strong>{todayTrades.length}</strong></span>
-      <span className="pulse-pnl"><small>Net P&L</small><strong className={pnl < 0 ? 'loss-text' : pnl > 0 ? 'profit-text' : ''}>{formatMoney(pnl, settings.currency, true)}</strong></span>
+      <span><small>Open</small><strong>{openTrades}</strong></span>
+      <span className="pulse-pnl"><small>{priceStatus.message || 'Net P&L'}</small><strong className={pnl < 0 ? 'loss-text' : pnl > 0 ? 'profit-text' : ''}>{formatMoney(pnl, settings.currency, true)}</strong></span>
       <ChevronRight size={15} />
     </button>
   )
@@ -636,12 +763,13 @@ function PeriodNavigator({ label, previous, next, today }) {
   )
 }
 
-function PerformanceLedger({ label, trades, target, currency, goSettings }) {
-  const tradingRecords = trades.filter((trade) => !isWithdrawal(trade))
-  const pnl = totalPnl(tradingRecords)
-  const wins = tradingRecords.filter((trade) => pnlOf(trade) > 0).length
+function PerformanceLedger({ label, trades, target, currency, marketPrices, goSettings }) {
+  const tradingRecords = trades.filter(isTradingRecord)
+  const pnl = totalPnl(tradingRecords, marketPrices)
+  const wins = tradingRecords.filter((trade) => pnlOf(trade, marketPrices) > 0).length
   const winRate = tradingRecords.length ? Math.round((wins / tradingRecords.length) * 100) : 0
   const tradeDays = new Set(tradingRecords.map((trade) => trade.date)).size
+  const openTrades = tradingRecords.filter(isOpenTrade).length
   const progress = target > 0 ? Math.max(0, Math.min(100, (pnl / target) * 100)) : 0
   return (
     <section className="performance-ledger">
@@ -649,7 +777,7 @@ function PerformanceLedger({ label, trades, target, currency, goSettings }) {
         <span>{label}</span>
         <strong className={pnl < 0 ? 'loss-text' : pnl > 0 ? 'profit-text' : ''}>{formatMoney(pnl, currency, true)}</strong>
       </div>
-      <div className="ledger-stat"><span>Trades</span><strong>{tradingRecords.length}</strong></div>
+      <div className="ledger-stat"><span>Trades</span><strong>{tradingRecords.length}</strong><small>{openTrades} open</small></div>
       <div className="ledger-stat"><span>Days</span><strong>{tradeDays}</strong></div>
       <div className="ledger-stat"><span>Win rate</span><strong>{winRate}%</strong></div>
       <div className="ledger-goal">
@@ -661,7 +789,7 @@ function PerformanceLedger({ label, trades, target, currency, goSettings }) {
   )
 }
 
-function MonthView({ trades, settings, cursor, openDay, goSettings }) {
+function MonthView({ trades, settings, marketPrices, cursor, openDay, goSettings }) {
   const filtered = trades.filter((trade) => {
     const date = fromDateKey(trade.date)
     return date.getFullYear() === cursor.getFullYear() && date.getMonth() === cursor.getMonth()
@@ -672,7 +800,7 @@ function MonthView({ trades, settings, cursor, openDay, goSettings }) {
 
   return (
     <>
-      <PerformanceLedger label="Net P&L this month" trades={filtered} target={settings.monthlyGoal} currency={settings.currency} goSettings={goSettings} />
+      <PerformanceLedger label="Net P&L this month" trades={filtered} target={settings.monthlyGoal} currency={settings.currency} marketPrices={marketPrices} goSettings={goSettings} />
 
       <div className="calendar-panel panel">
         <div className="panel-heading">
@@ -685,13 +813,13 @@ function MonthView({ trades, settings, cursor, openDay, goSettings }) {
             if (!date) return <span className="day-cell blank" key={`blank-${index}`} />
             const key = dateKey(date)
             const dayTrades = trades.filter((trade) => trade.date === key)
-            const tradingRecords = dayTrades.filter((trade) => !isWithdrawal(trade))
-            const dayPnl = totalPnl(tradingRecords)
+            const tradingRecords = dayTrades.filter(isTradingRecord)
+            const dayPnl = totalPnl(tradingRecords, marketPrices)
             const futureDay = key > todayKey
             const restDay = !tradingRecords.length && !futureDay
-            const onPlan = (!futureDay || tradingRecords.length) && isWithinDailyLossBudget(trades, settings, key)
+            const onPlan = (!futureDay || tradingRecords.length) && isWithinDailyLossBudget(trades, settings, key, marketPrices)
             const overBudget = tradingRecords.length && !onPlan
-            const dayStopped = dailyTradingLockReason(trades, settings, key)
+            const dayStopped = dailyTradingLockReason(trades, settings, key, marketPrices)
             const isToday = key === todayKey
             return (
               <button
@@ -716,40 +844,40 @@ function MonthView({ trades, settings, cursor, openDay, goSettings }) {
   )
 }
 
-function DayView({ date, trades, settings, openNewTrade, editTrade, deleteTrade, openImage }) {
+function DayView({ date, trades, settings, marketPrices, openNewTrade, editTrade, deleteTrade, openImage }) {
   const key = dateKey(date)
   const dayTrades = trades.filter((trade) => trade.date === key)
-  const tradingRecords = dayTrades.filter((trade) => !isWithdrawal(trade))
-  const wins = tradingRecords.filter((trade) => pnlOf(trade) > 0)
-  const losses = tradingRecords.filter((trade) => pnlOf(trade) < 0)
-  const stopped = dailyTradingLockReason(trades, settings, key)
+  const tradingRecords = dayTrades.filter(isTradingRecord)
+  const wins = tradingRecords.filter((trade) => pnlOf(trade, marketPrices) > 0)
+  const losses = tradingRecords.filter((trade) => pnlOf(trade, marketPrices) < 0)
+  const stopped = dailyTradingLockReason(trades, settings, key, marketPrices)
   return (
     <>
       <section className="day-ledger">
-        <div className="ledger-net"><span>Net P&L</span><strong className={totalPnl(tradingRecords) < 0 ? 'loss-text' : totalPnl(tradingRecords) > 0 ? 'profit-text' : ''}>{formatMoney(totalPnl(tradingRecords), settings.currency, true)}</strong></div>
+        <div className="ledger-net"><span>Net P&L</span><strong className={totalPnl(tradingRecords, marketPrices) < 0 ? 'loss-text' : totalPnl(tradingRecords, marketPrices) > 0 ? 'profit-text' : ''}>{formatMoney(totalPnl(tradingRecords, marketPrices), settings.currency, true)}</strong></div>
         <div className="ledger-stat"><span>Trades</span><strong>{tradingRecords.length}</strong></div>
-        <div className="ledger-stat profit"><span>Profit</span><strong>{formatMoney(totalPnl(wins), settings.currency)}</strong><small>{wins.length} {wins.length === 1 ? 'trade' : 'trades'}</small></div>
-        <div className="ledger-stat loss"><span>Loss</span><strong>{formatMoney(Math.abs(totalPnl(losses)), settings.currency)}</strong><small>{losses.length} {losses.length === 1 ? 'trade' : 'trades'}</small></div>
+        <div className="ledger-stat profit"><span>Profit</span><strong>{formatMoney(totalPnl(wins, marketPrices), settings.currency)}</strong><small>{wins.length} {wins.length === 1 ? 'trade' : 'trades'}</small></div>
+        <div className="ledger-stat loss"><span>Loss</span><strong>{formatMoney(Math.abs(totalPnl(losses, marketPrices)), settings.currency)}</strong><small>{losses.length} {losses.length === 1 ? 'trade' : 'trades'}</small></div>
       </section>
 
       {stopped && <section className="stop-loss-alert" role="alert"><LockKeyhole size={19} /><div><strong>{stopped.title}</strong><span>{stopped.message}</span></div></section>}
 
       <div className="section-heading">
         <div><h2>Trades</h2></div>
-        <button className="primary-button" onClick={() => openNewTrade(key)}><Plus size={18} /> {stopped ? 'Add withdrawal' : 'Add trade'}</button>
+        <button className="primary-button" onClick={() => openNewTrade(key)}><Plus size={18} /> {stopped ? 'Add withdrawal' : 'Start trade'}</button>
       </div>
 
       {dayTrades.length ? (
         <div className="trade-list">
           {dayTrades.map((trade) => (
-            <TradeCard key={trade.id} trade={trade} currency={settings.currency} onEdit={editTrade} onDelete={deleteTrade} onImage={openImage} />
+            <TradeCard key={trade.id} trade={trade} currency={settings.currency} marketPrices={marketPrices} onEdit={editTrade} onDelete={deleteTrade} onImage={openImage} />
           ))}
         </div>
       ) : (
         <EmptyState
           icon={CalendarDays}
           title="No trades yet"
-          text="Add a result, note, lesson, or chart."
+          text="Start with entry, TP, SL, size, and a chart."
           action={() => openNewTrade(key)}
         />
       )}
@@ -757,19 +885,29 @@ function DayView({ date, trades, settings, openNewTrade, editTrade, deleteTrade,
   )
 }
 
-function TradeCard({ trade, currency, onEdit, onDelete, onImage }) {
-  const pnl = pnlOf(trade)
+function TradeCard({ trade, currency, marketPrices, onEdit, onDelete, onImage }) {
+  const pnl = pnlOf(trade, marketPrices)
   const withdrawal = isWithdrawal(trade)
   const title = withdrawal ? 'Withdrawal' : trade.symbol || 'Unspecified market'
-  const subtitle = withdrawal ? 'Cash withdrawn' : trade.setup || (trade.side === 'profit' ? 'Profit' : 'Loss')
+  const livePrice = activeSides.includes(trade.side) ? tradePrice(trade, marketPrices) : 0
+  const subtitle = withdrawal ? 'Cash withdrawn' : `${activeSides.includes(trade.side) ? trade.side.toUpperCase() : trade.side === 'profit' ? 'Profit' : 'Loss'} · ${trade.status === 'closed' ? 'Closed' : 'Open'} · ${trade.time}`
   return (
-    <article className={`trade-card ${withdrawal ? 'withdrawal-card' : ''}`}>
-      <div className={`trade-side ${trade.side}`}><span>{withdrawal ? <CircleDollarSign /> : trade.side === 'profit' ? <ArrowUpRight /> : <ArrowDownRight />}</span></div>
+    <article className={`trade-card ${withdrawal ? 'withdrawal-card' : ''} ${isOpenTrade(trade) ? 'open-trade-card' : ''}`}>
+      <div className={`trade-side ${trade.side}`}><span>{withdrawal ? <CircleDollarSign /> : trade.side === 'profit' || trade.side === 'long' ? <ArrowUpRight /> : <ArrowDownRight />}</span></div>
       <div className="trade-content">
         <div className="trade-title-row">
-          <div><h3>{title}</h3><p>{subtitle} · {trade.time}</p></div>
+          <div><h3>{title}</h3><p>{subtitle}</p></div>
           <strong className={withdrawal ? 'withdrawal-text' : pnl >= 0 ? 'profit-text' : 'loss-text'}>{withdrawal ? formatMoney(-Math.abs(Number(trade.amount)), currency, true) : formatMoney(pnl, currency, true)}</strong>
         </div>
+        {activeSides.includes(trade.side) && (
+          <div className="trade-plan-row">
+            <span>Entry <strong>{Number(trade.entryPrice).toLocaleString(locale)}</strong></span>
+            <span>{trade.status === 'closed' ? 'Exit' : 'Now'} <strong>{livePrice ? livePrice.toLocaleString(locale) : '—'}</strong></span>
+            <span>TP <strong>{Number(trade.tpPrice).toLocaleString(locale)}</strong></span>
+            <span>SL <strong>{Number(trade.slPrice).toLocaleString(locale)}</strong></span>
+            <span>R:R <strong>{riskReward(trade)}</strong></span>
+          </div>
+        )}
         {(trade.note || trade.lesson) && (
           <div className="trade-notes">
             {trade.note && <p><span>Note</span>{trade.note}</p>}
@@ -786,11 +924,11 @@ function TradeCard({ trade, currency, onEdit, onDelete, onImage }) {
   )
 }
 
-function YearView({ trades, settings, cursor, openDay, goSettings }) {
+function YearView({ trades, settings, marketPrices, cursor, openDay, goSettings }) {
   const yearTrades = trades.filter((trade) => fromDateKey(trade.date).getFullYear() === cursor.getFullYear())
   return (
     <>
-      <PerformanceLedger label="Net P&L this year" trades={yearTrades} target={settings.yearlyGoal} currency={settings.currency} goSettings={goSettings} />
+      <PerformanceLedger label="Net P&L this year" trades={yearTrades} target={settings.yearlyGoal} currency={settings.currency} marketPrices={marketPrices} goSettings={goSettings} />
       <div className="year-grid">
         {Array.from({ length: 12 }, (_, month) => (
           <MiniMonth
@@ -799,6 +937,7 @@ function YearView({ trades, settings, cursor, openDay, goSettings }) {
             month={month}
             trades={trades}
             settings={settings}
+            marketPrices={marketPrices}
             currency={settings.currency}
             onOpen={(date) => openDay(date)}
           />
@@ -808,7 +947,7 @@ function YearView({ trades, settings, cursor, openDay, goSettings }) {
   )
 }
 
-function MiniMonth({ year, month, trades, settings, currency, onOpen }) {
+function MiniMonth({ year, month, trades, settings, marketPrices, currency, onOpen }) {
   const date = new Date(year, month, 1, 12)
   const cells = monthCells(date, true)
   const todayKey = dateKey(new Date())
@@ -816,7 +955,7 @@ function MiniMonth({ year, month, trades, settings, currency, onOpen }) {
     const itemDate = fromDateKey(trade.date)
     return itemDate.getFullYear() === year && itemDate.getMonth() === month
   })
-  const total = totalPnl(monthTrades)
+  const total = totalPnl(monthTrades, marketPrices)
   return (
     <article className="mini-month panel">
       <button className="mini-heading" onClick={() => onOpen(date)}>
@@ -827,10 +966,10 @@ function MiniMonth({ year, month, trades, settings, currency, onOpen }) {
         {cells.map((day, index) => {
           if (!day) return <i className="heat blank" key={`b-${index}`} />
           const key = dateKey(day)
-          const tradingRecords = trades.filter((trade) => trade.date === key && !isWithdrawal(trade))
-          const pnl = totalPnl(tradingRecords)
+          const tradingRecords = trades.filter((trade) => trade.date === key && isTradingRecord(trade))
+          const pnl = totalPnl(tradingRecords, marketPrices)
           const futureDay = key > todayKey
-          const onPlan = (!futureDay || tradingRecords.length) && isWithinDailyLossBudget(trades, settings, key)
+          const onPlan = (!futureDay || tradingRecords.length) && isWithinDailyLossBudget(trades, settings, key, marketPrices)
           return <button key={key} className={`heat ${onPlan ? 'win' : tradingRecords.length ? 'lose' : ''}`} onClick={() => onOpen(day)} title={`${day.getDate()}: ${formatMoney(pnl, currency, true)}`} />
         })}
       </div>
@@ -839,8 +978,8 @@ function MiniMonth({ year, month, trades, settings, currency, onOpen }) {
   )
 }
 
-function AllTimeView({ trades, settings, openDay }) {
-  const tradingRecords = trades.filter((trade) => !isWithdrawal(trade))
+function AllTimeView({ trades, settings, marketPrices, openDay }) {
+  const tradingRecords = trades.filter(isTradingRecord)
   const yearMap = useMemo(() => {
     const grouped = new Map()
     for (const trade of tradingRecords) {
@@ -850,7 +989,7 @@ function AllTimeView({ trades, settings, openDay }) {
     }
     return [...grouped.entries()].sort((a, b) => b[0] - a[0])
   }, [tradingRecords])
-  const pnl = totalPnl(tradingRecords)
+  const pnl = totalPnl(tradingRecords, marketPrices)
   return (
     <>
       <article className="all-time-hero panel">
@@ -860,7 +999,7 @@ function AllTimeView({ trades, settings, openDay }) {
       {yearMap.length ? (
         <div className="year-list">
           {yearMap.map(([year, entries]) => {
-            const value = totalPnl(entries)
+            const value = totalPnl(entries, marketPrices)
             return (
               <button key={year} onClick={() => openDay(fromDateKey(entries[0].date))}>
                 <span><strong>{year}</strong><small>{entries.length} {entries.length === 1 ? 'trade' : 'trades'}</small></span>
@@ -886,27 +1025,28 @@ function EmptyState({ icon: Icon, title, text, action }) {
   )
 }
 
-function AnalyticsPage({ trades, settings }) {
-  const tradingRecords = trades.filter((trade) => !isWithdrawal(trade))
-  const wins = tradingRecords.filter((trade) => pnlOf(trade) > 0)
-  const losses = tradingRecords.filter((trade) => pnlOf(trade) < 0)
-  const grossProfit = totalPnl(wins)
-  const grossLoss = Math.abs(totalPnl(losses))
+function AnalyticsPage({ trades, settings, marketPrices }) {
+  const tradingRecords = trades.filter(isTradingRecord)
+  const wins = tradingRecords.filter((trade) => pnlOf(trade, marketPrices) > 0)
+  const losses = tradingRecords.filter((trade) => pnlOf(trade, marketPrices) < 0)
+  const grossProfit = totalPnl(wins, marketPrices)
+  const grossLoss = Math.abs(totalPnl(losses, marketPrices))
+  const netPnl = totalPnl(tradingRecords, marketPrices)
   const winRate = tradingRecords.length ? (wins.length / tradingRecords.length) * 100 : 0
   const factor = grossLoss ? grossProfit / grossLoss : grossProfit ? Infinity : 0
   const avgWin = wins.length ? grossProfit / wins.length : 0
   const avgLoss = losses.length ? grossLoss / losses.length : 0
-  const expectancy = tradingRecords.length ? totalPnl(tradingRecords) / tradingRecords.length : 0
+  const expectancy = tradingRecords.length ? netPnl / tradingRecords.length : 0
   const dailyMap = new Map()
-  tradingRecords.forEach((trade) => dailyMap.set(trade.date, (dailyMap.get(trade.date) || 0) + pnlOf(trade)))
+  tradingRecords.forEach((trade) => dailyMap.set(trade.date, (dailyMap.get(trade.date) || 0) + pnlOf(trade, marketPrices)))
   const bestDay = [...dailyMap.values()].sort((a, b) => b - a)[0] || 0
   const ordered = [...tradingRecords].sort((a, b) => `${a.date} ${a.time}`.localeCompare(`${b.date} ${b.time}`))
   let running = 0
   const equity = ordered.map((trade) => {
-    running += pnlOf(trade)
+    running += pnlOf(trade, marketPrices)
     return running
   })
-  const monthly = makeMonthlyResults(tradingRecords, settings.currency)
+  const monthly = makeMonthlyResults(tradingRecords, marketPrices)
 
   return (
     <section className="page-section">
@@ -916,7 +1056,7 @@ function AnalyticsPage({ trades, settings }) {
       </div>
 
       <div className="analytics-hero panel">
-        <div><p>All-time net P&L</p><strong className={totalPnl(tradingRecords) < 0 ? 'loss-text' : 'profit-text'}>{formatMoney(totalPnl(tradingRecords), settings.currency, true)}</strong><span>{tradingRecords.length} {tradingRecords.length === 1 ? 'trade' : 'trades'} recorded</span></div>
+        <div><p>All-time net P&L</p><strong className={netPnl < 0 ? 'loss-text' : 'profit-text'}>{formatMoney(netPnl, settings.currency, true)}</strong><span>{tradingRecords.length} {tradingRecords.length === 1 ? 'trade' : 'trades'} recorded</span></div>
         <EquityChart values={equity} />
       </div>
 
@@ -969,11 +1109,11 @@ function EquityChart({ values }) {
   )
 }
 
-function makeMonthlyResults(trades) {
+function makeMonthlyResults(trades, marketPrices = {}) {
   const grouped = new Map()
   for (const trade of trades) {
     const key = trade.date.slice(0, 7)
-    grouped.set(key, (grouped.get(key) || 0) + pnlOf(trade))
+    grouped.set(key, (grouped.get(key) || 0) + pnlOf(trade, marketPrices))
   }
   const items = [...grouped.entries()].sort((a, b) => b[0].localeCompare(a[0])).slice(0, 6).reverse()
   const max = Math.max(1, ...items.map(([, value]) => Math.abs(value)))
@@ -1109,26 +1249,48 @@ function SettingsPage({ user, settings, trades, onSave, onImport, onClear, insta
   )
 }
 
-function TradeModal({ date, trade, locked = false, currency, onClose, onSave, notify }) {
+function TradeModal({ date, trade, locked = false, currency, marketPrices, priceStatus, onRefreshPrices, onClose, onSave, notify }) {
+  const initialSymbol = assets.includes(trade?.symbol) ? trade.symbol : 'XAUUSD'
+  const initialSide = activeSides.includes(trade?.side) || trade?.side === 'withdrawal'
+    ? trade.side
+    : locked ? 'withdrawal' : 'long'
   const [form, setForm] = useState(() => ({
-    side: trade?.side || (locked ? 'withdrawal' : 'profit'),
+    side: initialSide,
+    status: trade?.status || (trade?.exitPrice ? 'closed' : 'open'),
     amount: trade?.amount || '',
     date: trade?.date || date,
     time: trade?.time || nowTime(),
-    symbol: assets.includes(trade?.symbol) ? trade.symbol : 'XAUUSD',
+    symbol: initialSymbol,
+    entryPrice: trade?.entryPrice || '',
+    tpPrice: trade?.tpPrice || '',
+    slPrice: trade?.slPrice || '',
+    currentPrice: trade?.currentPrice || '',
+    exitPrice: trade?.exitPrice || '',
+    positionSize: trade?.positionSize || '0.01',
     setup: trade?.setup || '',
     note: trade?.note || '',
     lesson: trade?.lesson || '',
     image: trade?.image || null,
   }))
   const [saving, setSaving] = useState(false)
-  const amountRef = useRef(null)
+  const firstFieldRef = useRef(null)
+
+  const profile = marketProfiles[form.symbol] || marketProfiles.XAUUSD
+  const liveMarket = marketPrices[form.symbol]
+  const livePrice = marketPriceFor(form.symbol, marketPrices)
+  const previewPrice = Number(form.status === 'closed' ? form.exitPrice : form.currentPrice || livePrice || form.entryPrice)
+  const previewTrade = { ...form, symbol: form.symbol }
+  const previewPnl = form.side === 'withdrawal'
+    ? -Math.abs(Number(form.amount) || 0)
+    : calculatedPnl(previewTrade, previewPrice)
+  const previewReward = Math.abs(targetPnl(previewTrade, 'tpPrice'))
+  const previewRisk = Math.abs(targetPnl(previewTrade, 'slPrice'))
 
   useEffect(() => {
     document.body.classList.add('modal-open')
     const escape = (event) => event.key === 'Escape' && onClose()
     window.addEventListener('keydown', escape)
-    window.setTimeout(() => amountRef.current?.focus(), 100)
+    window.setTimeout(() => firstFieldRef.current?.focus(), 100)
     return () => {
       document.body.classList.remove('modal-open')
       window.removeEventListener('keydown', escape)
@@ -1136,6 +1298,13 @@ function TradeModal({ date, trade, locked = false, currency, onClose, onSave, no
   }, [onClose])
 
   const change = (key, value) => setForm((current) => ({ ...current, [key]: value }))
+  const useLivePrice = (key) => {
+    if (!livePrice) {
+      notify('Live price is not available yet.')
+      return
+    }
+    change(key, String(livePrice))
+  }
   const handleImage = async (event) => {
     const file = event.target.files?.[0]
     if (!file) return
@@ -1147,34 +1316,85 @@ function TradeModal({ date, trade, locked = false, currency, onClose, onSave, no
   }
   const submit = async (event) => {
     event.preventDefault()
-    const amount = Number(form.amount)
-    if (!Number.isFinite(amount) || amount <= 0) {
-      notify('Enter an amount greater than 0.')
-      amountRef.current?.focus()
+    const positive = (value) => Number.isFinite(Number(value)) && Number(value) > 0
+
+    if (form.side === 'withdrawal') {
+      if (!positive(form.amount)) {
+        notify('Enter a withdrawal amount greater than 0.')
+        firstFieldRef.current?.focus()
+        return
+      }
+      setSaving(true)
+      try {
+        await onSave({
+          id: trade?.id || safeId(),
+          createdAt: trade?.createdAt || new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          ...form,
+          amount: Math.abs(Number(form.amount)),
+          symbol: '',
+          setup: '',
+          note: form.note.trim(),
+          lesson: form.lesson.trim(),
+          image: null,
+        })
+      } catch {
+        notify("Couldn't save this withdrawal. Try again.")
+        setSaving(false)
+      }
       return
     }
-    if (form.side !== 'withdrawal' && !form.setup.trim()) {
+
+    if (!positive(form.entryPrice) || !positive(form.tpPrice) || !positive(form.slPrice) || !positive(form.positionSize)) {
+      notify('Enter entry, TP, SL, and size greater than 0.')
+      firstFieldRef.current?.focus()
+      return
+    }
+    if (form.status === 'closed' && !positive(form.exitPrice)) {
+      notify('Enter the exit price before closing this trade.')
+      return
+    }
+    const entry = Number(form.entryPrice)
+    const tp = Number(form.tpPrice)
+    const sl = Number(form.slPrice)
+    const validLong = form.side === 'long' && tp > entry && sl < entry
+    const validShort = form.side === 'short' && tp < entry && sl > entry
+    if (!validLong && !validShort) {
+      notify(form.side === 'long' ? 'For a long trade, TP must be above entry and SL below entry.' : 'For a short trade, TP must be below entry and SL above entry.')
+      return
+    }
+    if (!form.setup.trim()) {
       notify('Add the setup before saving this trade.')
       return
     }
-    if (form.side !== 'withdrawal' && !form.image) {
+    if (!form.image) {
       notify('Add a trade chart before saving.')
       return
     }
+
+    const price = form.status === 'closed' ? Number(form.exitPrice) : Number(form.currentPrice || livePrice || form.entryPrice)
+    const nextTrade = {
+      id: trade?.id || safeId(),
+      createdAt: trade?.createdAt || new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      ...form,
+      amount: Math.abs(calculatedPnl(form, price)),
+      entryPrice: entry,
+      tpPrice: tp,
+      slPrice: sl,
+      positionSize: Number(form.positionSize),
+      currentPrice: form.status === 'open' ? price : '',
+      exitPrice: form.status === 'closed' ? Number(form.exitPrice) : '',
+      setup: form.setup.trim(),
+      note: form.note.trim(),
+      lesson: form.lesson.trim(),
+      priceSource: liveMarket?.source || '',
+      priceUpdatedAt: liveMarket?.at || '',
+    }
+
     setSaving(true)
     try {
-      await onSave({
-        id: trade?.id || safeId(),
-        createdAt: trade?.createdAt || new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        ...form,
-        amount: Math.abs(amount),
-        symbol: form.side === 'withdrawal' ? '' : form.symbol,
-        setup: form.side === 'withdrawal' ? '' : form.setup.trim(),
-        note: form.note.trim(),
-        lesson: form.lesson.trim(),
-        image: form.side === 'withdrawal' ? null : form.image,
-      })
+      await onSave(nextTrade)
     } catch {
       notify("Couldn't save this trade. Try again.")
       setSaving(false)
@@ -1185,42 +1405,74 @@ function TradeModal({ date, trade, locked = false, currency, onClose, onSave, no
     <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
       <div className="trade-modal" role="dialog" aria-modal="true" aria-labelledby="trade-modal-title">
         <div className="modal-header">
-          <div><p className="modal-context">{new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'short', year: 'numeric' }).format(fromDateKey(form.date))}</p><h2 id="trade-modal-title">{trade ? 'Edit trade' : 'Add trade'}</h2></div>
+          <div><p className="modal-context">{new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'short', year: 'numeric' }).format(fromDateKey(form.date))}</p><h2 id="trade-modal-title">{trade ? 'Edit trade' : locked ? 'Add withdrawal' : 'Start trade'}</h2></div>
           <button className="icon-button" onClick={onClose} aria-label="Close"><X /></button>
         </div>
         <form onSubmit={submit}>
-          <div className="outcome-switch">
-            <button type="button" className={form.side === 'profit' ? 'active profit' : ''} onClick={() => change('side', 'profit')} disabled={locked}><ArrowUpRight /> Profit</button>
-            <button type="button" className={form.side === 'loss' ? 'active loss' : ''} onClick={() => change('side', 'loss')} disabled={locked}><ArrowDownRight /> Loss</button>
+          <div className="outcome-switch plan-switch">
+            <button type="button" className={form.side === 'long' ? 'active profit' : ''} onClick={() => change('side', 'long')} disabled={locked}><ArrowUpRight /> Long</button>
+            <button type="button" className={form.side === 'short' ? 'active loss' : ''} onClick={() => change('side', 'short')} disabled={locked}><ArrowDownRight /> Short</button>
             <button type="button" className={form.side === 'withdrawal' ? 'active withdrawal' : ''} onClick={() => change('side', 'withdrawal')}><CircleDollarSign /> Withdrawal</button>
           </div>
 
-          <div className="form-grid">
-            <label className="amount-field">{form.side === 'withdrawal' ? `Withdrawal amount (${currency})` : `P&L (${currency})`}<div><span>{form.side === 'loss' || form.side === 'withdrawal' ? '−' : '+'}</span><input ref={amountRef} type="number" inputMode="decimal" min="0.01" step="0.01" placeholder="0.00" value={form.amount} onChange={(event) => change('amount', event.target.value)} /></div></label>
-            <label>Date<input type="date" value={form.date} onChange={(event) => change('date', event.target.value)} required /></label>
-            <label>Time<input type="time" value={form.time} onChange={(event) => change('time', event.target.value)} required /></label>
-            {form.side !== 'withdrawal' && <>
-              <label>Asset<select value={form.symbol} onChange={(event) => change('symbol', event.target.value)} required>{assets.map((asset) => <option key={asset} value={asset}>{asset}</option>)}</select></label>
-              <label className="full-field">Setup<input placeholder="Breakout + retest" value={form.setup} onChange={(event) => change('setup', event.target.value)} maxLength={80} required /></label>
-            </>}
-            <label className="full-field">Note (optional)<textarea placeholder="What happened?" value={form.note} onChange={(event) => change('note', event.target.value)} maxLength={500} /></label>
-            <label className="full-field">Lesson (optional)<textarea placeholder="Next time…" value={form.lesson} onChange={(event) => change('lesson', event.target.value)} maxLength={500} /></label>
-          </div>
-
           {form.side !== 'withdrawal' && (
-            <div className="upload-field">
-              <div><strong>Trade chart</strong><span>Required · image up to 5 MB</span></div>
-              {form.image ? (
-                <div className="upload-preview"><img src={form.image.dataUrl} alt="Trade chart preview" /><div><span>{form.image.name}</span><button type="button" onClick={() => change('image', null)}><Trash2 size={16} /> Remove</button></div></div>
-              ) : (
-                <label className="upload-button"><ImagePlus size={22} /><span><strong>Add required image</strong></span><input type="file" accept="image/jpeg,image/png,image/webp" onChange={handleImage} /></label>
-              )}
+            <section className="price-feed-row">
+              <div>
+                <strong>{form.symbol} {livePrice ? livePrice.toLocaleString(locale) : 'No live price'}</strong>
+                <span>{liveMarket?.source || priceStatus.message || profile.source}</span>
+              </div>
+              <div>
+                <button type="button" className="icon-button" onClick={() => onRefreshPrices()} aria-label="Refresh price"><RefreshCw size={17} /></button>
+                <button type="button" className="secondary-button" onClick={() => useLivePrice(form.status === 'closed' ? 'exitPrice' : 'currentPrice')}>Use live</button>
+              </div>
+            </section>
+          )}
+
+          {form.side === 'withdrawal' ? (
+            <div className="form-grid">
+              <label className="amount-field full-field">Withdrawal amount ({currency})<div><span>-</span><input ref={firstFieldRef} aria-label="Withdrawal amount" type="number" inputMode="decimal" min="0.01" step="0.01" placeholder="0.00" value={form.amount} onChange={(event) => change('amount', event.target.value)} /></div></label>
+              <label>Date<input type="date" value={form.date} onChange={(event) => change('date', event.target.value)} required /></label>
+              <label>Time<input type="time" value={form.time} onChange={(event) => change('time', event.target.value)} required /></label>
+              <label className="full-field">Note (optional)<textarea placeholder="Cash movement note" value={form.note} onChange={(event) => change('note', event.target.value)} maxLength={500} /></label>
             </div>
+          ) : (
+            <>
+              <div className="form-grid">
+                <label>Date<input type="date" value={form.date} onChange={(event) => change('date', event.target.value)} required /></label>
+                <label>Time<input type="time" value={form.time} onChange={(event) => change('time', event.target.value)} required /></label>
+                <label>Asset<select value={form.symbol} onChange={(event) => change('symbol', event.target.value)} required>{assets.map((asset) => <option key={asset} value={asset}>{asset}</option>)}</select></label>
+                <label>Status<select value={form.status} onChange={(event) => change('status', event.target.value)}><option value="open">Open</option><option value="closed">Closed</option></select></label>
+                <label>Entry price<input ref={firstFieldRef} aria-label="Entry price" type="number" inputMode="decimal" min="0" step="any" placeholder="0.00" value={form.entryPrice} onChange={(event) => change('entryPrice', event.target.value)} required /></label>
+                <label>Size ({profile.sizeLabel})<input aria-label={`Size (${profile.sizeLabel})`} type="number" inputMode="decimal" min="0" step="any" placeholder="0.01" value={form.positionSize} onChange={(event) => change('positionSize', event.target.value)} required /></label>
+                <label>Take profit<input aria-label="Take profit" type="number" inputMode="decimal" min="0" step="any" placeholder="0.00" value={form.tpPrice} onChange={(event) => change('tpPrice', event.target.value)} required /></label>
+                <label>Stop loss<input aria-label="Stop loss" type="number" inputMode="decimal" min="0" step="any" placeholder="0.00" value={form.slPrice} onChange={(event) => change('slPrice', event.target.value)} required /></label>
+                <label>{form.status === 'closed' ? 'Exit price' : 'Current price'}<input aria-label={form.status === 'closed' ? 'Exit price' : 'Current price'} type="number" inputMode="decimal" min="0" step="any" placeholder={livePrice ? String(livePrice) : 'Optional'} value={form.status === 'closed' ? form.exitPrice : form.currentPrice} onChange={(event) => change(form.status === 'closed' ? 'exitPrice' : 'currentPrice', event.target.value)} /></label>
+                <label className="full-field">Setup<input placeholder="Breakout + retest" value={form.setup} onChange={(event) => change('setup', event.target.value)} maxLength={80} required /></label>
+                <label className="full-field">Note (optional)<textarea placeholder="What is the plan?" value={form.note} onChange={(event) => change('note', event.target.value)} maxLength={500} /></label>
+                <label className="full-field">Lesson (optional)<textarea placeholder="After closing, what did you learn?" value={form.lesson} onChange={(event) => change('lesson', event.target.value)} maxLength={500} /></label>
+              </div>
+
+              <section className="plan-preview">
+                <div><span>Live P&L</span><strong className={previewPnl < 0 ? 'loss-text' : previewPnl > 0 ? 'profit-text' : ''}>{formatMoney(previewPnl, currency, true)}</strong></div>
+                <div><span>Target</span><strong className="profit-text">{formatMoney(previewReward, currency)}</strong></div>
+                <div><span>Risk</span><strong className="loss-text">{formatMoney(previewRisk, currency)}</strong></div>
+                <div><span>R:R</span><strong>{riskReward(previewTrade)}</strong></div>
+              </section>
+
+              <div className="upload-field">
+                <div><strong>Trade chart</strong><span>Required - image up to 5 MB</span></div>
+                {form.image ? (
+                  <div className="upload-preview"><img src={form.image.dataUrl} alt="Trade chart preview" /><div><span>{form.image.name}</span><button type="button" onClick={() => change('image', null)}><Trash2 size={16} /> Remove</button></div></div>
+                ) : (
+                  <label className="upload-button"><ImagePlus size={22} /><span><strong>Add required image</strong></span><input type="file" accept="image/jpeg,image/png,image/webp" onChange={handleImage} /></label>
+                )}
+              </div>
+            </>
           )}
 
           <div className="modal-actions">
             <button type="button" className="secondary-button" onClick={onClose}>Cancel</button>
-            <button type="submit" className="primary-button" disabled={saving}>{saving ? 'Saving…' : trade ? 'Save changes' : 'Save trade'}</button>
+            <button type="submit" className="primary-button" disabled={saving}>{saving ? 'Saving...' : trade ? 'Save changes' : form.side === 'withdrawal' ? 'Save withdrawal' : 'Start trade'}</button>
           </div>
         </form>
       </div>
