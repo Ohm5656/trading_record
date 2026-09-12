@@ -47,19 +47,23 @@ try {
   await page.locator('.bottom-nav .nav-item').filter({ hasText: 'Calendar' }).click()
 
   await page.locator('.mobile-fab').click()
-  await page.locator('.amount-field input').fill('125.50')
   await page.getByLabel('Asset').selectOption('BTCUSD')
+  await page.getByLabel('Entry price', { exact: true }).fill('77000')
+  await page.getByLabel('Size (BTC)', { exact: true }).fill('0.1')
+  await page.getByLabel('Take profit', { exact: true }).fill('79000')
+  await page.getByLabel('Stop loss', { exact: true }).fill('76000')
+  await page.getByLabel('Current price', { exact: true }).fill('78255')
   await page.getByLabel('Setup').fill('Breakout retest')
   await page.getByLabel('Note (optional)').fill('Waited for the planned entry')
-  await page.getByRole('button', { name: 'Save trade', exact: true }).click()
-  await page.getByText('Add a trade chart before saving.', { exact: true }).waitFor()
+  await page.getByRole('dialog').getByRole('button', { name: 'Start trade', exact: true }).click()
+  await page.locator('.upload-button input').waitFor({ state: 'attached' })
   await page.locator('.upload-button input').setInputFiles({
     name: 'plan.png',
     mimeType: 'image/png',
     buffer: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64'),
   })
-  await page.getByRole('button', { name: 'Save trade', exact: true }).click()
-  await page.getByText('Trade saved', { exact: true }).waitFor()
+  await page.getByRole('dialog').getByRole('button', { name: 'Start trade', exact: true }).click()
+  await page.getByRole('dialog').waitFor({ state: 'hidden' })
   if (process.env.SCREENSHOT_PATH) await page.screenshot({ path: process.env.SCREENSHOT_PATH, fullPage: true })
   if (process.env.SCREENSHOT_DESKTOP_PATH) {
     await page.setViewportSize({ width: 1440, height: 900 })
@@ -67,8 +71,8 @@ try {
     await page.setViewportSize({ width: 390, height: 844 })
   }
 
-  const winCell = page.locator('.day-cell.on-plan').filter({ hasText: '+$126' })
-  assert(await winCell.count() === 1, 'Monthly calendar did not show the saved profit')
+  const winCell = page.locator('.day-cell.today').filter({ hasText: '1 trade' })
+  assert(await winCell.count() === 1, 'Monthly calendar did not show the saved trade')
   await winCell.click()
   await page.locator('.trade-card').waitFor()
   assert((await page.locator('.trade-card').innerText()).includes('BTCUSD'), 'Day view did not show the saved trade')
@@ -80,21 +84,26 @@ try {
   await page.getByText('Settings saved', { exact: true }).waitFor()
   await page.locator('.bottom-nav .nav-item').filter({ hasText: 'Calendar' }).click()
   await page.locator('.mobile-fab').click()
-  assert(await page.getByRole('button', { name: 'Profit', exact: true }).isDisabled(), 'Trading should be locked after the daily trade limit')
+  assert(await page.getByRole('button', { name: 'Long', exact: true }).isDisabled(), 'Trading should be locked after the daily trade limit')
   await page.getByRole('button', { name: 'Close' }).click()
 
   await page.getByRole('button', { name: 'Edit' }).click()
-  await page.getByRole('button', { name: 'Loss' }).click()
-  await page.locator('.amount-field input').fill('50')
+  await page.getByRole('button', { name: 'Short' }).click()
+  await page.getByLabel('Status').selectOption('closed')
+  await page.getByLabel('Entry price', { exact: true }).fill('77000')
+  await page.getByLabel('Take profit', { exact: true }).fill('76000')
+  await page.getByLabel('Stop loss', { exact: true }).fill('78000')
+  await page.getByLabel('Exit price', { exact: true }).fill('77500')
+  await page.getByLabel('Size (BTC)', { exact: true }).fill('0.1')
   await page.getByRole('button', { name: 'Save changes' }).click()
   await page.locator('.trade-card .loss-text').waitFor()
   assert((await page.locator('.trade-card .loss-text').innerText()).includes('50.00'), 'Edited loss was not reflected')
   assert(await page.locator('.stop-loss-alert').count() === 1, 'Daily stop-loss alert was not shown')
 
   await page.locator('.mobile-fab').click()
-  assert(await page.getByRole('button', { name: 'Profit', exact: true }).isDisabled(), 'Trading should be locked after the daily limit')
+  assert(await page.getByRole('button', { name: 'Long', exact: true }).isDisabled(), 'Trading should be locked after the daily limit')
   await page.locator('.amount-field input').fill('25')
-  await page.getByRole('button', { name: 'Save trade', exact: true }).click()
+  await page.getByRole('button', { name: 'Save withdrawal', exact: true }).click()
   await page.locator('.withdrawal-card').waitFor()
   assert((await page.locator('.withdrawal-card').innerText()).includes('Withdrawal'), 'Withdrawal was not shown as a separate card')
 
