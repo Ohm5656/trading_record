@@ -45,6 +45,7 @@ import {
   saveSettings,
   saveTrade,
 } from './db.js'
+import ChartWorkspace from './ChartWorkspace.jsx'
 import { assets, fetchMarketPrice, marketProfiles } from './marketData.js'
 
 const locale = 'en-US'
@@ -481,6 +482,7 @@ function App() {
               goSettings={() => setPage('settings')}
             />
           )}
+          {page === 'analysis' && <ChartWorkspace online={online} marketPrices={marketPrices} />}
           {page === 'analytics' && <AnalyticsPage trades={trades} settings={settings} marketPrices={marketPrices} />}
           {page === 'settings' && (
             <SettingsPage
@@ -519,9 +521,11 @@ function App() {
         <NavItems page={page} setPage={setPage} />
       </nav>
 
-      <button className="mobile-fab" aria-label="Start trade" onClick={() => openNewTrade(dateKey(new Date()))}>
-        <Plus size={27} />
-      </button>
+      {page !== 'analysis' && (
+        <button className="mobile-fab" aria-label="Start trade" onClick={() => openNewTrade(dateKey(new Date()))}>
+          <Plus size={27} />
+        </button>
+      )}
 
       {tradeModal && (
         <TradeModal
@@ -645,6 +649,7 @@ function Brand() {
 function NavItems({ page, setPage }) {
   const items = [
     { id: 'calendar', label: 'Calendar', icon: CalendarDays },
+    { id: 'analysis', label: 'Analyze', icon: LineChart },
     { id: 'analytics', label: 'Insights', icon: BarChart3 },
     { id: 'settings', label: 'Settings', icon: SettingsIcon },
   ]
