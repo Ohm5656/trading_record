@@ -45,6 +45,7 @@ import {
   saveSettings,
   saveTrade,
 } from './db.js'
+import { assets, fetchMarketPrice, marketProfiles } from './marketData.js'
 
 const locale = 'en-US'
 const viewOptions = [
@@ -55,20 +56,7 @@ const viewOptions = [
 ]
 const weekdayLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 const currencies = ['USD', 'THB', 'EUR', 'GBP', 'JPY', 'SGD']
-const assets = ['XAUUSD', 'BTCUSD']
 const activeSides = ['long', 'short']
-const marketProfiles = {
-  XAUUSD: {
-    source: 'Yahoo Finance gold futures proxy',
-    sizeLabel: 'lots',
-    contractSize: 100,
-  },
-  BTCUSD: {
-    source: 'Binance spot BTCUSDT',
-    sizeLabel: 'BTC',
-    contractSize: 1,
-  },
-}
 
 function dateKey(date) {
   const year = date.getFullYear()
@@ -264,31 +252,6 @@ function monthCells(date, showWeekends) {
 
 function safeId() {
   return globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`
-}
-
-async function fetchMarketPrice(symbol) {
-  if (symbol === 'BTCUSD') {
-    const response = await fetch('https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT')
-    if (!response.ok) throw new Error('BTC price request failed')
-    const data = await response.json()
-    const price = Number(data.price)
-    if (!Number.isFinite(price) || price <= 0) throw new Error('BTC price was invalid')
-    return { price, source: marketProfiles.BTCUSD.source, at: new Date().toISOString() }
-  }
-
-  if (symbol === 'XAUUSD') {
-    const response = await fetch('https://query1.finance.yahoo.com/v8/finance/chart/GC=F?interval=1m&range=1d')
-    if (!response.ok) throw new Error('Gold price request failed')
-    const data = await response.json()
-    const result = data.chart?.result?.[0]
-    const quote = result?.indicators?.quote?.[0]?.close || []
-    const lastClose = [...quote].reverse().find((value) => Number.isFinite(Number(value)) && Number(value) > 0)
-    const price = Number(result?.meta?.regularMarketPrice || lastClose)
-    if (!Number.isFinite(price) || price <= 0) throw new Error('Gold price was invalid')
-    return { price, source: marketProfiles.XAUUSD.source, at: new Date().toISOString() }
-  }
-
-  throw new Error('Unsupported market')
 }
 
 function readImage(file) {
