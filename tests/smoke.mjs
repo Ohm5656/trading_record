@@ -27,6 +27,48 @@ try {
   const page = await context.newPage()
   const browserErrors = []
   page.on('pageerror', (error) => browserErrors.push(error.message))
+  const countStoredTrades = () => page.evaluate(() => new Promise((resolve, reject) => {
+    const request = indexedDB.open('edge-journal-db')
+    request.onerror = () => reject(request.error)
+    request.onsuccess = () => {
+      const database = request.result
+      const count = database.transaction('trades').objectStore('trades').count()
+      count.onerror = () => reject(count.error)
+      count.onsuccess = () => {
+        database.close()
+        resolve(count.result)
+      }
+    }
+  }))
+
+  const now = Date.now()
+  const btcKlines = Array.from({ length: 120 }, (_, index) => {
+    const open = 76500 + Math.sin(index / 8) * 900 + index * 6
+    return [now - (119 - index) * 300000, String(open), String(open + 260), String(open - 230), String(open + Math.sin(index) * 120)]
+  })
+  const goldTimestamps = Array.from({ length: 120 }, (_, index) => Math.floor((now - (119 - index) * 300000) / 1000))
+  const goldValues = goldTimestamps.map((_, index) => 2340 + Math.sin(index / 7) * 8 + index * 0.08)
+  await page.route('**/api/v3/ticker/price*', (route) => route.fulfill({ contentType: 'application/json', body: '{"price":"78255"}' }))
+  await page.route('**/api/v3/klines*', (route) => route.fulfill({ contentType: 'application/json', body: JSON.stringify(btcKlines) }))
+  await page.route('**/v8/finance/chart/GC=F*', (route) => route.fulfill({
+    contentType: 'application/json',
+    body: JSON.stringify({
+      chart: {
+        result: [{
+          timestamp: goldTimestamps,
+          meta: { regularMarketPrice: goldValues.at(-1) },
+          indicators: {
+            quote: [{
+              open: goldValues,
+              high: goldValues.map((value) => value + 2.4),
+              low: goldValues.map((value) => value - 2.1),
+              close: goldValues.map((value, index) => value + Math.sin(index) * 1.2),
+            }],
+          },
+        }],
+      },
+    }),
+  }))
 
   await page.goto('http://127.0.0.1:4178', { waitUntil: 'networkidle' })
   await page.getByRole('button', { name: 'Create account', exact: true }).click()
@@ -46,24 +88,49 @@ try {
   await page.getByText('Settings saved', { exact: true }).waitFor()
   await page.locator('.bottom-nav .nav-item').filter({ hasText: 'Calendar' }).click()
 
-  await page.locator('.mobile-fab').click()
-  await page.getByLabel('Asset').selectOption('BTCUSD')
-  await page.getByLabel('Entry price', { exact: true }).fill('77000')
+  await page.locator('.bottom-nav .nav-item').filter({ hasText: 'Analyze' }).click()
+  await page.locator('.chart-state').waitFor({ state: 'hidden' })
+  await page.getByRole('tab', { name: 'BTCUSD', exact: true }).click()
+  await page.locator('.chart-state').waitFor({ state: 'hidden' })
+  await page.getByRole('button', { name: 'Long', exact: true }).click()
+  await page.locator('.market-chart').click({ position: { x: 190, y: 220 } })
+  await page.getByLabel('Plan entry price').fill('77000')
+  await page.getByLabel('Plan take profit').fill('79000')
+  await page.getByLabel('Plan stop loss').fill('76000')
+  assert(await page.locator('.reward-zone').count() === 1, 'Long plan reward zone was not drawn')
+  assert(await page.locator('.risk-zone').count() === 1, 'Long plan risk zone was not drawn')
+  const chartHasPixels = await page.locator('.market-chart canvas').evaluateAll((canvases) => canvases.some((canvas) => {
+    const pixels = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data
+    return pixels.some((value, index) => index % 4 !== 3 && value !== 0)
+  }))
+  assert(chartHasPixels, 'Market chart canvas was blank')
+  assert(await countStoredTrades() === 0, 'A chart draft was stored before confirmation')
+  assert(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), 'Analysis workspace overflowed on mobile')
+  if (process.env.SCREENSHOT_ANALYSIS_PATH) await page.screenshot({ path: process.env.SCREENSHOT_ANALYSIS_PATH })
+  if (process.env.SCREENSHOT_ANALYSIS_DESKTOP_PATH) {
+    await page.setViewportSize({ width: 1440, height: 900 })
+    assert(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), 'Analysis workspace overflowed on desktop')
+    await page.screenshot({ path: process.env.SCREENSHOT_ANALYSIS_DESKTOP_PATH })
+    await page.setViewportSize({ width: 390, height: 844 })
+  }
+  await page.getByRole('button', { name: 'Use this plan', exact: true }).click()
+  await page.getByRole('dialog').waitFor()
+  assert(await page.getByLabel('Entry price', { exact: true }).inputValue() === '77000', 'Chart entry was not transferred to the ticket')
+  assert(await page.getByLabel('Take profit', { exact: true }).inputValue() === '79000', 'Chart TP was not transferred to the ticket')
+  assert(await page.getByLabel('Stop loss', { exact: true }).inputValue() === '76000', 'Chart SL was not transferred to the ticket')
+  assert(await page.locator('.upload-preview img').count() === 1, 'Chart snapshot was not attached to the ticket')
+  assert(await page.locator('.upload-preview img').evaluate((image) => image.complete && image.naturalWidth > 0), 'Chart snapshot was blank')
+  assert(await countStoredTrades() === 0, 'Opening a planned ticket stored a trade before Start trade')
+  if (process.env.SCREENSHOT_TICKET_PATH) await page.screenshot({ path: process.env.SCREENSHOT_TICKET_PATH })
   await page.getByLabel('Size (BTC)', { exact: true }).fill('0.1')
-  await page.getByLabel('Take profit', { exact: true }).fill('79000')
-  await page.getByLabel('Stop loss', { exact: true }).fill('76000')
   await page.getByLabel('Current price', { exact: true }).fill('78255')
   await page.getByLabel('Setup').fill('Breakout retest')
   await page.getByLabel('Note (optional)').fill('Waited for the planned entry')
   await page.getByRole('dialog').getByRole('button', { name: 'Start trade', exact: true }).click()
-  await page.locator('.upload-button input').waitFor({ state: 'attached' })
-  await page.locator('.upload-button input').setInputFiles({
-    name: 'plan.png',
-    mimeType: 'image/png',
-    buffer: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64'),
-  })
-  await page.getByRole('dialog').getByRole('button', { name: 'Start trade', exact: true }).click()
   await page.getByRole('dialog').waitFor({ state: 'hidden' })
+  await page.locator('.trade-card.open-trade-card').waitFor()
+  assert((await page.locator('.trade-card').innerText()).includes('BTCUSD'), 'Confirmed chart plan did not open in the day view')
+  await page.getByRole('button', { name: 'Month', exact: true }).click()
   if (process.env.SCREENSHOT_PATH) await page.screenshot({ path: process.env.SCREENSHOT_PATH, fullPage: true })
   if (process.env.SCREENSHOT_DESKTOP_PATH) {
     await page.setViewportSize({ width: 1440, height: 900 })
@@ -139,7 +206,7 @@ try {
   assert(await page.locator('.day-cell.on-plan').filter({ hasText: '50' }).count() === 1, 'Trade was not isolated to and restored for the logged-in user')
   assert(browserErrors.length === 0, `Browser errors: ${browserErrors.join(', ')}`)
 
-  console.log('Smoke test passed: auth, remembered session, trade workflow, image, analytics, and user data persistence')
+  console.log('Smoke test passed: auth, chart plan, trade workflow, analytics, and user data persistence')
   await context.close()
 } finally {
   await browser.close()
