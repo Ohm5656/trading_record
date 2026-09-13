@@ -361,6 +361,7 @@ function App() {
   }, [currentUser, online])
 
   async function persistTrade(trade) {
+    const originatedFromChart = Boolean(tradeModal?.preset)
     const currentLockReason = dailyTradingLockReason(trades, settings, trade.date, marketPrices)
     if (!tradeModal?.trade && !isWithdrawal(trade) && currentLockReason) {
       notify(currentLockReason.notification)
@@ -376,6 +377,10 @@ function App() {
     setSelectedDate(trade.date)
     setCursor(fromDateKey(trade.date))
     setTradeModal(null)
+    if (originatedFromChart && !isWithdrawal(trade)) {
+      setPage('calendar')
+      setView('day')
+    }
     notify(dailyLimitReached ? dailyLimitReached.notification : tradeModal?.trade ? 'Trade updated' : isWithdrawal(trade) ? 'Withdrawal saved' : 'Trade saved')
   }
 
@@ -392,14 +397,14 @@ function App() {
     notify('Settings saved')
   }
 
-  const openNewTrade = (date = selectedDate) => {
+  const openNewTrade = (date = selectedDate, preset = null) => {
     const lockReason = dailyTradingLockReason(trades, settings, date, marketPrices)
     if (lockReason) {
       setTradeModal({ date, trade: null, locked: true })
       notify(`${lockReason.title}. Only a withdrawal can be added today.`)
       return
     }
-    setTradeModal({ date, trade: null })
+    setTradeModal({ date, trade: null, preset })
   }
   const openDay = (date) => {
     setCursor(date)
@@ -482,7 +487,13 @@ function App() {
               goSettings={() => setPage('settings')}
             />
           )}
-          {page === 'analysis' && <ChartWorkspace online={online} marketPrices={marketPrices} />}
+          {page === 'analysis' && (
+            <ChartWorkspace
+              online={online}
+              marketPrices={marketPrices}
+              onUsePlan={(preset) => openNewTrade(dateKey(new Date()), preset)}
+            />
+          )}
           {page === 'analytics' && <AnalyticsPage trades={trades} settings={settings} marketPrices={marketPrices} />}
           {page === 'settings' && (
             <SettingsPage
@@ -532,6 +543,7 @@ function App() {
           key={tradeModal.trade?.id || tradeModal.date}
           date={tradeModal.date}
           trade={tradeModal.trade}
+          preset={tradeModal.preset}
           locked={tradeModal.locked}
           currency={settings.currency}
           marketPrices={marketPrices}
@@ -1217,28 +1229,31 @@ function SettingsPage({ user, settings, trades, onSave, onImport, onClear, insta
   )
 }
 
-function TradeModal({ date, trade, locked = false, currency, marketPrices, priceStatus, onRefreshPrices, onClose, onSave, notify }) {
-  const initialSymbol = assets.includes(trade?.symbol) ? trade.symbol : 'XAUUSD'
-  const initialSide = activeSides.includes(trade?.side) || trade?.side === 'withdrawal'
-    ? trade.side
+function TradeModal({ date, trade, preset, locked = false, currency, marketPrices, priceStatus, onRefreshPrices, onClose, onSave, notify }) {
+  const source = trade || preset
+  const initialSymbol = assets.includes(source?.symbol) ? source.symbol : 'XAUUSD'
+  const initialSide = activeSides.includes(source?.side) || source?.side === 'withdrawal'
+    ? source.side
     : locked ? 'withdrawal' : 'long'
   const [form, setForm] = useState(() => ({
     side: initialSide,
-    status: trade?.status || (trade?.exitPrice ? 'closed' : 'open'),
-    amount: trade?.amount || '',
-    date: trade?.date || date,
-    time: trade?.time || nowTime(),
+    status: source?.status || (source?.exitPrice ? 'closed' : 'open'),
+    amount: source?.amount || '',
+    date: source?.date || date,
+    time: source?.time || nowTime(),
     symbol: initialSymbol,
-    entryPrice: trade?.entryPrice || '',
-    tpPrice: trade?.tpPrice || '',
-    slPrice: trade?.slPrice || '',
-    currentPrice: trade?.currentPrice || '',
-    exitPrice: trade?.exitPrice || '',
-    positionSize: trade?.positionSize || '0.01',
-    setup: trade?.setup || '',
-    note: trade?.note || '',
-    lesson: trade?.lesson || '',
-    image: trade?.image || null,
+    entryPrice: source?.entryPrice || '',
+    tpPrice: source?.tpPrice || '',
+    slPrice: source?.slPrice || '',
+    currentPrice: source?.currentPrice || '',
+    exitPrice: source?.exitPrice || '',
+    positionSize: source?.positionSize || '0.01',
+    setup: source?.setup || '',
+    note: source?.note || '',
+    lesson: source?.lesson || '',
+    image: source?.image || null,
+    chartTimeframe: source?.chartTimeframe || '',
+    planCreatedAt: source?.planCreatedAt || '',
   }))
   const [saving, setSaving] = useState(false)
   const firstFieldRef = useRef(null)
@@ -1377,6 +1392,12 @@ function TradeModal({ date, trade, locked = false, currency, marketPrices, price
           <button className="icon-button" onClick={onClose} aria-label="Close"><X /></button>
         </div>
         <form onSubmit={submit}>
+          {preset && !locked && (
+            <div className="chart-plan-loaded">
+              <Target size={17} />
+              <span><strong>Chart plan loaded</strong>{form.symbol} / {form.chartTimeframe}</span>
+            </div>
+          )}
           <div className="outcome-switch plan-switch">
             <button type="button" className={form.side === 'long' ? 'active profit' : ''} onClick={() => change('side', 'long')} disabled={locked}><ArrowUpRight /> Long</button>
             <button type="button" className={form.side === 'short' ? 'active loss' : ''} onClick={() => change('side', 'short')} disabled={locked}><ArrowDownRight /> Short</button>

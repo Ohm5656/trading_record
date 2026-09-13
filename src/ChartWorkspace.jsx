@@ -51,7 +51,7 @@ function validateDraft(draft) {
   return ''
 }
 
-function CandleChart({ candles, symbol, activeTool, draft, onHover, onEntrySelect }) {
+function CandleChart({ candles, symbol, activeTool, draft, captureRef, onHover, onEntrySelect }) {
   const containerRef = useRef(null)
   const chartRef = useRef(null)
   const seriesRef = useRef(null)
@@ -130,6 +130,7 @@ function CandleChart({ candles, symbol, activeTool, draft, onHover, onEntrySelec
     }
     chartRef.current = chart
     seriesRef.current = series
+    captureRef.current = () => chart.takeScreenshot(true).toDataURL('image/png')
     const resizeObserver = new ResizeObserver(([entry]) => {
       const { width, height } = entry.contentRect
       if (width > 0 && height > 0) {
@@ -154,8 +155,9 @@ function CandleChart({ candles, symbol, activeTool, draft, onHover, onEntrySelec
       chart.remove()
       chartRef.current = null
       seriesRef.current = null
+      captureRef.current = null
     }
-  }, [onHover])
+  }, [captureRef, onHover])
 
   useEffect(() => {
     const series = seriesRef.current
@@ -210,7 +212,7 @@ function CandleChart({ candles, symbol, activeTool, draft, onHover, onEntrySelec
   )
 }
 
-export default function ChartWorkspace({ online, marketPrices }) {
+export default function ChartWorkspace({ online, marketPrices, onUsePlan }) {
   const [symbol, setSymbol] = useState('XAUUSD')
   const [timeframe, setTimeframe] = useState('5m')
   const [chartData, setChartData] = useState({ candles: [], source: '', at: '' })
@@ -219,6 +221,7 @@ export default function ChartWorkspace({ online, marketPrices }) {
   const [activeTool, setActiveTool] = useState(null)
   const [draft, setDraft] = useState(null)
   const requestRef = useRef(0)
+  const captureRef = useRef(null)
   const precision = marketProfiles[symbol]?.pricePrecision || 2
   const latestCandle = chartData.candles.at(-1)
   const inspectedCandle = hoveredCandle || latestCandle
@@ -268,6 +271,22 @@ export default function ChartWorkspace({ online, marketPrices }) {
 
   const changeDraftPrice = (key, value) => {
     setDraft((current) => ({ ...current, [key]: value }))
+  }
+
+  const usePlan = () => {
+    if (!draft || draftError) return
+    const dataUrl = captureRef.current?.()
+    onUsePlan({
+      ...draft,
+      entryPrice: Number(draft.entryPrice),
+      tpPrice: Number(draft.tpPrice),
+      slPrice: Number(draft.slPrice),
+      symbol,
+      currentPrice: roundedPrice(Number(livePrice) || Number(draft.entryPrice), precision),
+      chartTimeframe: timeframe,
+      planCreatedAt: new Date().toISOString(),
+      image: dataUrl ? { name: `${symbol}-${timeframe}-plan.png`, type: 'image/png', dataUrl } : null,
+    })
   }
 
   return (
@@ -342,6 +361,7 @@ export default function ChartWorkspace({ online, marketPrices }) {
               symbol={symbol}
               activeTool={activeTool}
               draft={draft}
+              captureRef={captureRef}
               onHover={setHoveredCandle}
               onEntrySelect={placeEntry}
             />
@@ -401,6 +421,9 @@ export default function ChartWorkspace({ online, marketPrices }) {
               </div>
               {draftError && <p className="plan-error" role="alert">{draftError}</p>}
               <div className="draft-state"><i /> Draft only - not in journal</div>
+              <button className="primary-button use-plan-button" type="button" disabled={Boolean(draftError)} onClick={usePlan}>
+                <Target size={16} /> Use this plan
+              </button>
             </div>
           )}
         </aside>
