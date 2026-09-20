@@ -834,6 +834,59 @@ h2 {
   object-fit: cover;
 }
 
+.chart-evidence {
+  display: grid;
+  width: min(520px, 100%);
+  grid-template-columns: 118px minmax(0, 1fr);
+  align-items: stretch;
+  gap: 0;
+  margin-top: 14px;
+  overflow: hidden;
+  border: 1px solid var(--line-soft);
+  border-radius: 14px;
+  background: #0b120f;
+  color: inherit;
+  cursor: pointer;
+  padding: 0;
+  text-align: left;
+}
+
+.chart-evidence:hover {
+  border-color: #42584e;
+  background: var(--surface-2);
+}
+
+.chart-evidence img {
+  width: 100%;
+  height: 100%;
+  min-height: 82px;
+  object-fit: cover;
+}
+
+.chart-evidence span {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  justify-content: center;
+  gap: 5px;
+  padding: 12px 13px;
+}
+
+.chart-evidence strong {
+  color: #dce6e0;
+  font-size: 12px;
+}
+
+.chart-evidence small {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.45;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
 .empty-state {
   display: flex;
   min-height: 290px;
@@ -1554,6 +1607,24 @@ textarea::placeholder {
   font-size: 12px;
 }
 
+.chart-evidence-editor {
+  display: grid;
+  gap: 11px;
+}
+
+.image-caption-field {
+  display: grid;
+  gap: 8px;
+  color: #9aa7a1;
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.image-caption-field textarea {
+  min-height: 86px;
+  resize: vertical;
+}
+
 .modal-actions {
   display: grid;
   grid-template-columns: .7fr 1.3fr;
@@ -1577,6 +1648,30 @@ textarea::placeholder {
   max-height: 88vh;
   border-radius: 14px;
   object-fit: contain;
+}
+
+.lightbox-figure {
+  display: grid;
+  max-width: min(1100px, 96vw);
+  gap: 12px;
+  margin: 0;
+}
+
+.lightbox-figure img {
+  max-width: 100%;
+  max-height: 82vh;
+}
+
+.lightbox-figure figcaption {
+  max-width: 78ch;
+  justify-self: center;
+  border: 1px solid rgb(255 255 255 / 10%);
+  border-radius: 12px;
+  background: rgb(10 16 13 / 88%);
+  color: #dfe8e3;
+  font-size: 13px;
+  line-height: 1.55;
+  padding: 12px 14px;
 }
 
 .lightbox-close {
@@ -5042,6 +5137,26 @@ textarea,
 @media (max-width: 700px) {
   .outcome-switch button {
     font-size: 10px;
+  }
+
+  .chart-evidence {
+    grid-template-columns: 92px minmax(0, 1fr);
+  }
+
+  .chart-evidence img {
+    min-height: 76px;
+  }
+
+  .chart-evidence span {
+    padding: 10px;
+  }
+
+  .lightbox {
+    padding: 18px;
+  }
+
+  .lightbox-figure figcaption {
+    font-size: 12px;
   }
 }
 

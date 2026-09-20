@@ -488,7 +488,10 @@ function App() {
       {lightbox && (
         <div className="lightbox" role="dialog" aria-modal="true" onClick={() => setLightbox(null)}>
           <button className="icon-button lightbox-close" onClick={() => setLightbox(null)} aria-label="Close"><X /></button>
-          <img src={lightbox.dataUrl} alt={lightbox.name || 'Trade plan'} onClick={(event) => event.stopPropagation()} />
+          <figure className="lightbox-figure" onClick={(event) => event.stopPropagation()}>
+            <img src={lightbox.dataUrl} alt={lightbox.name || 'Trade plan'} />
+            {lightbox.caption && <figcaption>{lightbox.caption}</figcaption>}
+          </figure>
         </div>
       )}
 
@@ -819,7 +822,18 @@ function TradeCard({ trade, currency, marketPrices, onEdit, onDelete, onImage })
             {trade.lesson && <p><span>Lesson</span>{trade.lesson}</p>}
           </div>
         )}
-        {trade.image && <button className="image-thumb" onClick={() => onImage(trade.image)}><img src={trade.image.dataUrl} alt={trade.image.name || 'Trade plan'} /><span>View chart</span></button>}
+        {trade.image && (
+          <button
+            className="chart-evidence"
+            onClick={() => onImage({ ...trade.image, caption: trade.imageCaption || trade.image.caption || '' })}
+          >
+            <img src={trade.image.dataUrl} alt={trade.image.name || 'Trade plan'} />
+            <span>
+              <strong>Plan snapshot</strong>
+              <small>{trade.imageCaption || trade.image.caption || 'View the chart used for this entry.'}</small>
+            </span>
+          </button>
+        )}
       </div>
       <div className="trade-actions">
         <button className="icon-button" onClick={() => onEdit(trade)} aria-label="Edit"><Pencil size={17} /></button>
@@ -1150,6 +1164,7 @@ function TradeModal({ date, trade, preset, currency, marketPrices, priceStatus, 
     note: source?.note || '',
     lesson: source?.lesson || '',
     image: source?.image || null,
+    imageCaption: source?.imageCaption || source?.image?.caption || '',
     chartTimeframe: source?.chartTimeframe || '',
     planCreatedAt: source?.planCreatedAt || '',
   }))
@@ -1218,6 +1233,7 @@ function TradeModal({ date, trade, preset, currency, marketPrices, priceStatus, 
           note: form.note.trim(),
           lesson: form.lesson.trim(),
           image: null,
+          imageCaption: '',
         })
       } catch {
         notify("Couldn't save this withdrawal. Try again.")
@@ -1269,6 +1285,7 @@ function TradeModal({ date, trade, preset, currency, marketPrices, priceStatus, 
       setup: form.setup.trim(),
       note: form.note.trim(),
       lesson: form.lesson.trim(),
+      imageCaption: form.imageCaption.trim(),
       priceSource: liveMarket?.source || '',
       priceUpdatedAt: liveMarket?.at || '',
     }
@@ -1347,11 +1364,16 @@ function TradeModal({ date, trade, preset, currency, marketPrices, priceStatus, 
               </section>
 
               <div className="upload-field">
-                <div><strong>Trade chart</strong><span>Required - image up to 5 MB</span></div>
+                <div><strong>Plan evidence</strong><span>Add the chart you used, then write the entry reason under it.</span></div>
                 {form.image ? (
-                  <div className="upload-preview"><img src={form.image.dataUrl} alt="Trade chart preview" /><div><span>{form.image.name}</span><button type="button" onClick={() => change('image', null)}><Trash2 size={16} /> Remove</button></div></div>
+                  <div className="chart-evidence-editor">
+                    <div className="upload-preview"><img src={form.image.dataUrl} alt="Trade chart preview" /><div><span>{form.image.name}</span><button type="button" onClick={() => setForm((current) => ({ ...current, image: null, imageCaption: '' }))}><Trash2 size={16} /> Remove</button></div></div>
+                    <label className="image-caption-field">Why this entry?
+                      <textarea placeholder="Liquidity sweep, retest, trendline break, confirmation candle..." value={form.imageCaption} onChange={(event) => change('imageCaption', event.target.value)} maxLength={600} />
+                    </label>
+                  </div>
                 ) : (
-                  <label className="upload-button"><ImagePlus size={22} /><span><strong>Add required image</strong></span><input type="file" accept="image/jpeg,image/png,image/webp" onChange={handleImage} /></label>
+                  <label className="upload-button"><ImagePlus size={22} /><span><strong>Add trade plan image</strong><small>PNG, JPG, or WebP up to 5 MB</small></span><input type="file" accept="image/jpeg,image/png,image/webp" onChange={handleImage} /></label>
                 )}
               </div>
             </>
