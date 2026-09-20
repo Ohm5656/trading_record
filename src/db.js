@@ -10,8 +10,6 @@ export const defaults = {
   currency: 'USD',
   monthlyGoal: 1000,
   yearlyGoal: 12000,
-  dailyStopLossByMonth: {},
-  dailyTradeLimit: 0,
   showWeekends: true,
 }
 
