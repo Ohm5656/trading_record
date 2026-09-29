@@ -1,9 +1,9 @@
-const CACHE = 'trade-rise-v13'
+const CACHE = 'trade-rise-v14'
 const APP_SHELL = ['/index.html', '/manifest.webmanifest', '/trade-rise-logo.png', '/trade-rise-icon-192.png', '/trade-rise-icon-512.png']
 
 async function precacheApp() {
   const cache = await caches.open(CACHE)
-  const indexResponse = await fetch('/')
+  const indexResponse = await fetch('/', { cache: 'no-cache' })
   const markup = await indexResponse.clone().text()
   const builtAssets = [...markup.matchAll(/(?:src|href)="(\/assets\/[^\"]+)"/g)].map((match) => match[1])
   await cache.put('/', indexResponse)
@@ -26,6 +26,21 @@ self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return
   const requestUrl = new URL(event.request.url)
   if (requestUrl.origin !== self.location.origin) return
+
+  if (event.request.mode === 'navigate') {
+    event.respondWith(
+      fetch(event.request)
+        .then(async (response) => {
+          if (response.ok) {
+            const cache = await caches.open(CACHE)
+            await cache.put('/', response.clone())
+          }
+          return response
+        })
+        .catch(async () => (await caches.match(event.request)) || caches.match('/index.html') || caches.match('/')),
+    )
+    return
+  }
 
   event.respondWith(
     (async () => {
