@@ -728,16 +728,15 @@ function MonthView({ trades, settings, marketPrices, cursor, openDay, goSettings
             const tradingRecords = dayTrades.filter(isTradingRecord)
             const dayPnl = totalPnl(tradingRecords, marketPrices)
             const futureDay = key > todayKey
-            const restDay = !tradingRecords.length && !futureDay
             const profitDay = tradingRecords.length && dayPnl > 0
             const lossDay = tradingRecords.length && dayPnl < 0
             const isToday = key === todayKey
             return (
               <button
                 key={key}
-                className={`day-cell ${profitDay ? 'win' : ''} ${lossDay ? 'lose' : ''} ${restDay ? 'rest-day' : ''} ${isToday ? 'today' : ''}`}
+                className={`day-cell ${profitDay ? 'win' : ''} ${lossDay ? 'lose' : ''} ${isToday ? 'today' : ''}`}
                 onClick={() => openDay(date)}
-                aria-label={futureDay && !tradingRecords.length ? `${date.getDate()} future date` : `${date.getDate()} ${dayPnl > 0 ? 'profit' : dayPnl < 0 ? 'loss' : 'break even'} ${formatMoney(dayPnl, settings.currency, true)}`}
+                aria-label={tradingRecords.length ? `${date.getDate()} ${dayPnl > 0 ? 'profit' : dayPnl < 0 ? 'loss' : 'break even'} ${formatMoney(dayPnl, settings.currency, true)}` : `${date.getDate()} ${futureDay ? 'future date' : 'no trades'}`}
               >
                 <span className="day-number">{date.getDate()}</span>
                 {tradingRecords.length ? (
@@ -745,7 +744,7 @@ function MonthView({ trades, settings, marketPrices, cursor, openDay, goSettings
                     <strong>{formatCompactMoney(dayPnl, settings.currency)}</strong>
                     <small>{tradingRecords.length} {tradingRecords.length === 1 ? 'trade' : 'trades'}</small>
                   </>
-                ) : restDay ? <><strong>+{formatCompactMoney(0, settings.currency)}</strong><small>{dayTrades.some(isWithdrawal) ? 'Withdrawal' : 'No trades'}</small></> : <span className="empty-dash">—</span>}
+                ) : <span className="empty-dash">—</span>}
               </button>
             )
           })}
